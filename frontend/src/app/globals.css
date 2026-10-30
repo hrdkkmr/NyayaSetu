@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+/* NyayaSetu design tokens. Colours meet WCAG AA contrast on their intended backgrounds. */
+@theme {
+  --color-navy-950: #071a33;
+  --color-navy-900: #0b2545;
+  --color-navy-800: #13315c;
+  --color-navy-700: #1d4e89;
+  --color-navy-600: #2a62a6;
+  --color-navy-100: #e3ecf7;
+  --color-navy-50: #f1f5fb;
+  --color-saffron-600: #b85c0f;
+  --color-saffron-100: #fdeedd;
+  --color-success-700: #17663c;
+  --color-success-100: #e2f3e9;
+  --color-warning-700: #8a5a00;
+  --color-warning-100: #fff4d6;
+  --color-danger-700: #b42318;
+  --color-danger-100: #fde7e5;
+  --color-ink: #1b2430;
+  --color-muted: #4f5b6b;
+  --color-line: #d9dee6;
+  --color-surface: #ffffff;
+  --color-canvas: #f6f7f9;
+  --font-sans: var(--font-noto-sans), var(--font-noto-devanagari), system-ui, sans-serif;
+  --radius-card: 0.75rem;
+}
+
+:root {
+  --text-scale: 1;
+}
+
+html {
+  font-size: calc(100% * var(--text-scale));
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  line-height: 1.6;
+}
+
+/* High-contrast preference set in Settings. */
+html[data-contrast="high"] {
+  --color-muted: #2a3340;
+  --color-line: #6b7686;
+  --color-canvas: #ffffff;
+}
+html[data-contrast="high"] a {
+  text-decoration: underline;
+}
+
+html[data-reduce-motion="true"] *,
+html[data-reduce-motion="true"] *::before,
+html[data-reduce-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-saffron-600);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+}
+.skip-link:focus {
+  left: 1rem;
+  top: 1rem;
+  z-index: 100;
+  background: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+}
+
+@keyframes ns-wave {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}

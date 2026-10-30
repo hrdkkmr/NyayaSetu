@@ -1,0 +1,96 @@
+# Official legal sources ingested into the NyayaSetu knowledge base.
+#
+# Rules for editing this file (see docs/LEGAL_RAG_DESIGN.md):
+#   * Only add documents published by an official authority (Gazette of India,
+#     India Code, a court, a ministry or a statutory body).
+#   * Every metadata value must be read from the document itself or the official
+#     page that hosts it. Leave a field null rather than guessing.
+#   * `snapshot` is a local copy downloaded from `source_url`; its sha256 is recorded at
+#     ingestion. Set LEGAL_FETCH_LIVE=true to re-download and detect changes.
+
+sources:
+  - key: gazette_of_india
+    name: The Gazette of India (e-Gazette)
+    base_url: https://egazette.gov.in/
+    source_type: gazette
+  - key: high_court_tripura
+    name: High Court of Tripura website (hosted copy of a Gazette notification)
+    base_url: https://www.thc.nic.in/
+    source_type: court_website
+
+documents:
+  - key: cpa_2019
+    source: gazette_of_india
+    title: The Consumer Protection Act, 2019 (No. 35 of 2019)
+    doc_type: act
+    legal_domain: consumer_protection
+    jurisdiction: IN
+    source_url: https://egazette.gov.in/WriteReadData/2019/210422.pdf
+    snapshot: snapshots/cpa_2019_gazette_210422.pdf
+    snapshot_downloaded_on: "2026-10-30"
+    identifier: Act No. 35 of 2019
+    publication_date: "2019-08-09"
+    effective_date: null
+    effective_date_note: >-
+      Section 1(2)-(3): the Act comes into force on dates appointed by the Central
+      Government by notification, and different dates may be appointed for different
+      provisions. Per-section commencement notifications are not in this knowledge base.
+    version_label: As enacted (Gazette of India, Extraordinary, 9 August 2019)
+    amended_by:
+      - document: cp_jurisdiction_rules_2021
+        provisions: ["Section 34(1)", "Section 47(1)(a)(i)", "Section 58(1)(a)(i)"]
+        effect: >-
+          The pecuniary limits printed in sections 34, 47 and 58 of this as-enacted text
+          were replaced, under the provisos to those sections, by the Consumer Protection
+          (Jurisdiction of the District Commission, the State Commission and the National
+          Commission) Rules, 2021.
+    language: en
+
+  - key: cp_jurisdiction_rules_2021
+    source: high_court_tripura
+    title: >-
+      Consumer Protection (Jurisdiction of the District Commission, the State Commission
+      and the National Commission) Rules, 2021 - G.S.R. 912(E)
+    doc_type: rules
+    legal_domain: consumer_protection
+    jurisdiction: IN
+    source_url: "https://www.thc.nic.in/Central%20Governmental%20Rules/Consumer%20Protection%20(Jurisdiction%20of%20the%20District%20Commission,%20the%20State%20Commission%20and%20the%20National%20Commission)%20Rules,%202021.pdf"
+    snapshot: snapshots/cp_jurisdiction_rules_2021_gsr912e.pdf
+    snapshot_downloaded_on: "2026-10-30"
+    identifier: G.S.R. 912(E)
+    publication_date: "2021-12-30"
+    effective_date: null
+    effective_date_note: >-
+      Rule 1(2): the rules come into force on the date of their publication in the
+      Official Gazette. The notification is dated 30 December 2021.
+    version_label: As notified (Ministry of Consumer Affairs notification dated 30 December 2021)
+    amends:
+      - document: cpa_2019
+        provisions: ["Section 34(1)", "Section 47(1)(a)(i)", "Section 58(1)(a)(i)"]
+    language: en
+
+  - key: cp_cdrc_amendment_rules_2023
+    source: gazette_of_india
+    title: >-
+      Consumer Protection (Consumer Disputes Redressal Commissions) (Amendment) Rules, 2023
+      - G.S.R. 606(E)
+    doc_type: amendment_rules
+    legal_domain: consumer_protection
+    jurisdiction: IN
+    source_url: https://egazette.gov.in/WriteReadData/2023/248158.pdf
+    snapshot: snapshots/cp_cdrc_amendment_rules_2023_gsr606e.pdf
+    snapshot_downloaded_on: "2026-10-30"
+    identifier: G.S.R. 606(E)
+    publication_date: "2023-08-17"
+    effective_date: null
+    effective_date_note: >-
+      Rule 1(2): comes into force on the date of publication in the Official Gazette
+      (Gazette of India, Extraordinary, No. 476, 17 August 2023).
+    version_label: Substitutes the fee table in rule 7(2) of the CDRC Rules, 2020
+    amends:
+      - document: cp_cdrc_rules_2020
+        provisions: ["Rule 7(2) Table"]
+        note: >-
+          The principal rules (G.S.R. 448(E), 15 July 2020) are not yet ingested; only this
+          amendment's substituted fee table is in the knowledge base.
+    language: en

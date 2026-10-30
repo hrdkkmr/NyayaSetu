@@ -1,0 +1,5 @@
+# Optional capabilities. Each is detected at runtime; the app degrades gracefully without them.
+# Browser-assisted filing (also run: python -m playwright install chromium)
+playwright>=1.47
+# OCR for scanned images/PDFs (also requires the Tesseract binary with the `hin` and `eng` language packs)
+pytesseract>=0.3.13
