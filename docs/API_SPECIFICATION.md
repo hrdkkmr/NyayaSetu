@@ -20,8 +20,10 @@ JSON everywhere except uploads (multipart) and downloads (binary).
 | POST | `/login` | `{email, password}` |
 | POST | `/refresh` | cookie or `{refresh_token}`; rotates the token |
 | POST | `/logout` | revokes session |
-| POST | `/password/forgot` | `{email}` → generic message (dev: `dev_reset_token`) |
-| POST | `/password/reset` | `{token, new_password}`; revokes all sessions |
+| POST | `/password/forgot` | `{email}` → generic message; emails a 6-digit code valid `PASSWORD_RESET_TTL_MINUTES` (dev: `dev_reset_code`) |
+| POST | `/password/reset` | `{email, code, new_password}`; code burned after `PASSWORD_RESET_MAX_ATTEMPTS` wrong tries; revokes all sessions. Errors `reset_invalid`, `reset_expired` |
+| GET | `/providers` | `{google_client_id: string \| null}` — sign-in methods to offer |
+| POST | `/google` | `{credential, language?}` (Google ID token) → `AuthResponse`; creates or links the account by verified email. Errors `google_invalid`, `google_email_unverified` (401), `google_not_configured`, `google_unreachable` (503) |
 | GET | `/me` | current user + preferences |
 
 ## Users `/users/me`

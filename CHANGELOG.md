@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- `LLM_PROVIDER=openai_compatible` (`LLM_API_BASE`, `LLM_API_KEY`, `LLM_MODEL`): agents can use any
+  OpenAI-style Chat Completions API (xAI Grok, Groq) with the same consent gate and rule fallback.
+- Password reset by 6-digit email code (one page: request → enter code + new password), with a
+  bilingual HTML email; codes expire in 10 minutes and are burned after 5 wrong attempts.
+  `/reset-password` links now redirect to `/forgot-password`.
+- Sign in with Google (`GOOGLE_CLIENT_ID`; `GET /auth/providers`, `POST /auth/google`); the button is
+  hidden when not configured. Migration `0002` adds `users.google_sub` and
+  `password_reset_tokens.attempts`.
+- `render.yaml` Blueprint (free Postgres + Docker API, Groq LLM); `DATABASE_URL` values starting
+  `postgres://`/`postgresql://` are converted to the asyncpg driver automatically.
+- `.env.example` reorganised for a Render (API) + Vercel (web) deployment with Gmail SMTP;
+  Render + Vercel steps in `docs/DEPLOYMENT_GUIDE.md`.
+
+### Changed
+- `POST /auth/password/reset` takes `{email, code, new_password}` instead of `{token, new_password}`;
+  dev responses expose `dev_reset_code` instead of `dev_reset_token`.
+- Agent execution rows record the active provider's name instead of always `anthropic`.
+
 ## 0.1.0 — 2026-10-31 (first implementation)
 
 ### Added

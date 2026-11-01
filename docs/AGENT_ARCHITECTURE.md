@@ -45,7 +45,10 @@ documents, verification, approval, safety, language. Facts are rebuilt from the 
 
 ## LLM usage (`agents/llm.py`)
 Provider abstraction: `AnthropicProvider` (Claude `claude-opus-5-5`, structured outputs via
-`beta.messages.parse`, server-side refusal fallbacks) or `OfflineProvider`. Used only when the
+`beta.messages.parse`, server-side refusal fallbacks), `OpenAICompatibleProvider`
+(`LLM_PROVIDER=openai_compatible`: any OpenAI-style Chat Completions API such as xAI Grok or Groq,
+over httpx; `response_format` JSON schema, falling back to JSON mode after a 400; replies validated
+against the Pydantic model) or `OfflineProvider`. Used only when the
 user has `consent_external_ai` and a key is configured. Safeguards: excerpt must appear in the
 user's text or the fact becomes an inference; rephrasings rejected if they cite unretrieved
 provisions or make guarantees; any LLM error falls back to rules.

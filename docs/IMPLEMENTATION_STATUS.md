@@ -7,12 +7,15 @@ services to verify · **Partial** · **Not implemented** · **Blocked** = by ext
 | Module | Status | Notes |
 |---|---|---|
 | Auth (register, login, refresh rotation, logout, reset, sessions, CSRF, bearer) | Done | Email delivery: Needs credentials (SMTP) |
+| Password reset by 6-digit email code (bilingual HTML email) | Done | Gmail SMTP login verified locally; delivery depends on SMTP |
+| Sign in with Google (Google Identity Services ID token) | Needs credentials | Verification tested with locally signed tokens; not run against a live Google client ID |
 | Users: profile, preferences, consents, export, deletion request/execution | Done | Automatic retention purge: Not implemented |
 | Cases, facts with provenance, timeline, deadlines, updates, archive, activity | Done | |
 | Dashboard | Done | Empty states; no sample data |
 | LangGraph workflow (persistence, retries, recovery, approval interrupt) | Done | |
 | Intake / classification / research / planning / verification agents (rule path) | Done | |
 | Same agents with Claude | Needs credentials | Tested with a scripted provider |
+| Same agents with an OpenAI-compatible API (xAI Grok, Groq) | Needs credentials | HTTP layer tested with a mock transport; not run against a live API |
 | Legal ingestion + hybrid retrieval + citations | Done | 3 official documents; pgvector path verified by DDL only |
 | Consumer rules (forum, fee, limitation, territory, consumer status, reliefs, appeal) | Done | Grounded in ingested provisions |
 | Uploads: validation, encryption, extraction, field review, evidence | Done | OCR: Needs credentials (Tesseract binary); antivirus: Not implemented |

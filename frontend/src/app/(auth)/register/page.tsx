@@ -8,6 +8,7 @@ import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { GoogleSignIn } from "@/components/google-sign-in";
 import { Button } from "@/components/ui/button";
 import { Alert, Card, CardBody, Checkbox, Field, Input, Label, Select } from "@/components/ui/primitives";
 import { api, ApiError } from "@/lib/api";
@@ -77,6 +78,7 @@ export default function RegisterPage() {
       <CardBody className="space-y-5 py-6">
         <h1 className="text-2xl font-bold text-navy-900">{t("auth.registerTitle")}</h1>
         {error && <Alert tone="danger">{error}</Alert>}
+        <GoogleSignIn next="/cases/new" />
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
           <Field id="full_name" label={t("auth.fullName")} error={err.full_name && t("auth.fullName")}>
             <Input id="full_name" autoComplete="name" {...register("full_name")} aria-invalid={!!err.full_name} />

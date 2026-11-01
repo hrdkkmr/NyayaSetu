@@ -73,12 +73,16 @@ async def test_refresh_rotation_invalidates_old_token(client: httpx.AsyncClient)
 
 async def test_password_reset_flow_revokes_sessions(client: httpx.AsyncClient) -> None:
     s = await register(client)
-    forgot = await client.post("/api/v1/auth/password/forgot", json={"email": s.user["email"]})
-    token = forgot.json()["dev_reset_token"]
-    reset = await client.post("/api/v1/auth/password/reset", json={"token": token, "new_password": "brand-new-pass-77"})
+    email = s.user["email"]
+    forgot = await client.post("/api/v1/auth/password/forgot", json={"email": email})
+    code = forgot.json()["dev_reset_code"]
+    assert len(code) == 6 and code.isdigit()
+    reset = await client.post("/api/v1/auth/password/reset",
+                              json={"email": email, "code": code, "new_password": "brand-new-pass-77"})
     assert reset.status_code == 200
     assert (await client.get("/api/v1/auth/me")).status_code == 401  # old session revoked
-    reuse = await client.post("/api/v1/auth/password/reset", json={"token": token, "new_password": "another-pass-88"})
+    reuse = await client.post("/api/v1/auth/password/reset",
+                              json={"email": email, "code": code, "new_password": "another-pass-88"})
     assert reuse.status_code == 400
     login = await client.post("/api/v1/auth/login", json={"email": s.user["email"], "password": "brand-new-pass-77"})
     assert login.status_code == 200
@@ -87,7 +91,7 @@ async def test_password_reset_flow_revokes_sessions(client: httpx.AsyncClient) -
 async def test_forgot_password_does_not_reveal_accounts(client: httpx.AsyncClient) -> None:
     resp = await client.post("/api/v1/auth/password/forgot", json={"email": "nobody@example.com"})
     assert resp.status_code == 200
-    assert "dev_reset_token" not in resp.json()
+    assert "dev_reset_code" not in resp.json()
 
 
 async def test_auth_rate_limit(client: httpx.AsyncClient, monkeypatch) -> None:  # type: ignore[no-untyped-def]

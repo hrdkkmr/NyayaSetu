@@ -39,11 +39,15 @@ class Settings(BaseSettings):
     # --- Auth -----------------------------------------------------------------
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 14
-    password_reset_ttl_minutes: int = 30
+    # Password reset uses a 6-digit one-time code sent by email.
+    password_reset_ttl_minutes: int = 10
+    password_reset_max_attempts: int = 5
     cookie_secure: bool = False
     cookie_domain: str | None = None
     # When true, password reset tokens are returned in the API response (development only).
     expose_dev_reset_tokens: bool = False
+    # "Sign in with Google" (Google Identity Services). Unset = the button is hidden.
+    google_client_id: str | None = None
 
     # --- Email (password reset, reminders) ---------------------------------------
     smtp_host: str | None = None
@@ -70,11 +74,15 @@ class Settings(BaseSettings):
     storage_encryption_key: str | None = None
 
     # --- LLM ----------------------------------------------------------------------
-    llm_provider: Literal["anthropic", "offline"] = "anthropic"
+    llm_provider: Literal["anthropic", "openai_compatible", "offline"] = "anthropic"
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-opus-5-5"
     anthropic_effort: Literal["low", "medium", "high", "xhigh", "max"] = "medium"
     anthropic_enable_fallbacks: bool = True
+    # Any OpenAI-compatible Chat Completions API (e.g. xAI Grok, Groq).
+    llm_api_base: str | None = None
+    llm_api_key: str | None = None
+    llm_model: str | None = None
     llm_timeout_seconds: float = 90.0
 
     # --- Embeddings -------------------------------------------------------------
@@ -120,6 +128,16 @@ class Settings(BaseSettings):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _async_driver(cls, value: object) -> object:
+        # Hosts (e.g. Render) hand out postgres:// or postgresql:// URLs; the app needs asyncpg.
+        if isinstance(value, str):
+            for prefix in ("postgres://", "postgresql://"):
+                if value.startswith(prefix):
+                    return "postgresql+asyncpg://" + value[len(prefix):]
+        return value
+
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
@@ -130,7 +148,17 @@ class Settings(BaseSettings):
 
     @property
     def llm_configured(self) -> bool:
-        return self.llm_provider == "anthropic" and bool(self.anthropic_api_key)
+        if self.llm_provider == "anthropic":
+            return bool(self.anthropic_api_key)
+        if self.llm_provider == "openai_compatible":
+            return bool(self.llm_api_base and self.llm_api_key and self.llm_model)
+        return False
+
+    @property
+    def llm_description(self) -> str:
+        if self.llm_provider == "openai_compatible":
+            return f"{self.llm_model} via {self.llm_api_base}"
+        return f"Anthropic {self.anthropic_model}"
 
     def validate_for_production(self) -> list[str]:
         """Return configuration problems that must block a production start."""

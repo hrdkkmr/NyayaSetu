@@ -274,7 +274,7 @@ async def ask_node(state: CaseState, config: RunnableConfig) -> dict[str, Any]:
         "reply": text, "reply_cards": cards, "asked_slot": slot_key, "next_question": question,
         "batch_pending": batch,
         "phase": "intake" if missing else state.get("phase", "intake"),
-        "_provider": "anthropic" if used_llm else "rules",
+        "_provider": llm.name if used_llm else "rules",
         "_summary": {"asked": slot_key, "confirm": is_confirm, "missing_required": missing},
     }
 
@@ -349,7 +349,7 @@ async def plan_node(state: CaseState, config: RunnableConfig) -> dict[str, Any]:
     polished, used = await responder.polish(llm, state.get("allow_external_ai", False), text, lang, None, allowed,
                                             state.get("modality") == "voice")
     return {"plan": plan, "reply": polished, "reply_cards": cards, "asked_slot": None,
-            "_provider": "anthropic" if used else "rules", "_summary": {"steps": len(plan)}}
+            "_provider": llm.name if used else "rules", "_summary": {"steps": len(plan)}}
 
 
 @recorded("document_generation")

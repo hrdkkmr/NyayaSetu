@@ -20,13 +20,15 @@ def email_configured() -> bool:
     return bool(get_settings().smtp_host)
 
 
-def _send_sync(to: str, subject: str, body: str) -> None:
+def _send_sync(to: str, subject: str, body: str, html: str | None = None) -> None:
     settings = get_settings()
     msg = EmailMessage()
     msg["From"] = settings.smtp_from
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype="html")
     assert settings.smtp_host
     with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:
         if settings.smtp_starttls:
@@ -36,13 +38,16 @@ def _send_sync(to: str, subject: str, body: str) -> None:
         smtp.send_message(msg)
 
 
-async def send_email(to: str, subject: str, body: str) -> str:
-    """Send an email. Returns 'sent', 'not_configured' or 'failed'."""
+async def send_email(to: str, subject: str, body: str, html: str | None = None) -> str:
+    """Send an email (plain text, optionally with an HTML alternative).
+
+    Returns 'sent', 'not_configured' or 'failed'.
+    """
     if not email_configured():
         logger.info("Email not sent (SMTP not configured): subject=%s", subject)
         return "not_configured"
     try:
-        await asyncio.to_thread(_send_sync, to, subject, body)
+        await asyncio.to_thread(_send_sync, to, subject, body, html)
         return "sent"
     except Exception:
         logger.exception("Email delivery failed: subject=%s", subject)

@@ -42,12 +42,58 @@ async def test_refresh_token_reuse_revokes_all_sessions(client: httpx.AsyncClien
     assert after.status_code == 401
 
 
-async def test_reset_consumes_all_outstanding_links(client: httpx.AsyncClient) -> None:
+async def test_new_reset_code_invalidates_older_codes(client: httpx.AsyncClient) -> None:
     s = await register(client)
-    first = (await client.post("/api/v1/auth/password/forgot", json={"email": s.user["email"]})).json()["dev_reset_token"]
-    second = (await client.post("/api/v1/auth/password/forgot", json={"email": s.user["email"]})).json()["dev_reset_token"]
-    assert (await client.post("/api/v1/auth/password/reset", json={"token": second, "new_password": "brand-new-pass-77"})).status_code == 200
-    assert (await client.post("/api/v1/auth/password/reset", json={"token": first, "new_password": "another-pass-88"})).status_code == 400
+    email = s.user["email"]
+    first = (await client.post("/api/v1/auth/password/forgot", json={"email": email})).json()["dev_reset_code"]
+    second = (await client.post("/api/v1/auth/password/forgot", json={"email": email})).json()["dev_reset_code"]
+    if first != second:
+        old = await client.post("/api/v1/auth/password/reset",
+                                json={"email": email, "code": first, "new_password": "another-pass-88"})
+        assert old.status_code == 400
+    ok = await client.post("/api/v1/auth/password/reset",
+                           json={"email": email, "code": second, "new_password": "brand-new-pass-77"})
+    assert ok.status_code == 200
+    reuse = await client.post("/api/v1/auth/password/reset",
+                              json={"email": email, "code": second, "new_password": "another-pass-88"})
+    assert reuse.status_code == 400
+
+
+async def test_reset_code_is_burned_after_too_many_wrong_attempts(client: httpx.AsyncClient) -> None:
+    from app.config import get_settings
+
+    s = await register(client)
+    email = s.user["email"]
+    code = (await client.post("/api/v1/auth/password/forgot", json={"email": email})).json()["dev_reset_code"]
+    wrong = f"{(int(code) + 1) % 1_000_000:06d}"
+    for _ in range(get_settings().password_reset_max_attempts):
+        r = await client.post("/api/v1/auth/password/reset",
+                              json={"email": email, "code": wrong, "new_password": "brand-new-pass-77"})
+        assert r.json()["error"]["code"] == "reset_invalid"
+    # Even the right code no longer works once the attempt budget is spent.
+    r = await client.post("/api/v1/auth/password/reset",
+                          json={"email": email, "code": code, "new_password": "brand-new-pass-77"})
+    assert r.status_code == 400
+
+
+async def test_reset_code_cannot_be_used_for_another_account(client: httpx.AsyncClient) -> None:
+    victim, attacker = await register(client), await register(client)
+    code = (await client.post("/api/v1/auth/password/forgot",
+                              json={"email": attacker.user["email"]})).json()["dev_reset_code"]
+    r = await client.post("/api/v1/auth/password/reset",
+                          json={"email": victim.user["email"], "code": code, "new_password": "brand-new-pass-77"})
+    assert r.status_code == 400
+
+
+async def test_expired_reset_code_is_rejected(client: httpx.AsyncClient, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from app.config import get_settings
+
+    s = await register(client)
+    monkeypatch.setattr(get_settings(), "password_reset_ttl_minutes", -1)
+    code = (await client.post("/api/v1/auth/password/forgot", json={"email": s.user["email"]})).json()["dev_reset_code"]
+    r = await client.post("/api/v1/auth/password/reset",
+                          json={"email": s.user["email"], "code": code, "new_password": "brand-new-pass-77"})
+    assert r.json()["error"]["code"] == "reset_expired"
 
 
 async def test_voice_ticket_single_use_and_revoked_session(client: httpx.AsyncClient) -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hmac
+import secrets
 import uuid
 from datetime import UTC, timedelta
 
@@ -28,7 +30,9 @@ from app.db.base import utcnow
 from app.db.session import get_db
 from app.models import AuthSession, PasswordResetToken, User, UserPreferences
 from app.schemas.auth import (
+    AuthProvidersOut,
     AuthResponse,
+    GoogleLoginRequest,
     LoginRequest,
     PasswordForgotRequest,
     PasswordResetRequest,
@@ -38,6 +42,8 @@ from app.schemas.auth import (
 )
 from app.schemas.common import Message
 from app.services.email import email_configured, send_email
+from app.services.email_templates import password_reset_code_email
+from app.services.google_identity import verify_google_credential
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -203,6 +209,11 @@ async def logout(
     return Message(message="Signed out.")
 
 
+def _reset_code_hash(record_id: uuid.UUID, code: str) -> str:
+    # Bound to the record, so equal codes issued for different requests never collide.
+    return keyed_hash(f"{record_id}:{code}", "reset-code")
+
+
 @router.post("/password/forgot", response_model=dict, dependencies=[Depends(rate_limit_auth)])
 async def forgot_password(
     payload: PasswordForgotRequest, request: Request, background: BackgroundTasks,
@@ -211,54 +222,66 @@ async def forgot_password(
     await rate_limit_account(payload.email)
     s = get_settings()
     generic: dict[str, object] = {
-        "message": "If an account exists for this email, we have sent password reset instructions.",
+        "message": "If an account exists for this email, we have sent a 6-digit reset code.",
     }
     user = await db.scalar(select(User).where(func.lower(User.email) == payload.email.lower()))
     if user is None or not user.is_active:
         return generic
-    token = new_opaque_token()
     now = utcnow()
+    # Only the newest code is valid.
+    await db.execute(update(PasswordResetToken).where(
+        PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None)).values(used_at=now))
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    record_id = uuid.uuid4()
     db.add(PasswordResetToken(
-        user_id=user.id, token_hash=keyed_hash(token, "reset"), created_at=now,
+        id=record_id, user_id=user.id, token_hash=_reset_code_hash(record_id, code), created_at=now,
         expires_at=now + timedelta(minutes=s.password_reset_ttl_minutes),
     ))
-    link = f"{s.public_app_url.rstrip('/')}/reset-password?token={token}"
+    await db.refresh(user, attribute_names=["preferences"])
+    language = user.preferences.language if user.preferences else "en"
+    content = password_reset_code_email(user.full_name, code, s.password_reset_ttl_minutes, language)
     # Sent after the response so response time does not reveal whether the account exists.
-    background.add_task(
-        send_email, user.email, "Reset your NyayaSetu password",
-        f"Use this link within {s.password_reset_ttl_minutes} minutes to reset your password:\n\n"
-        f"{link}\n\nIf you did not ask for this, you can ignore this email.",
-    )
+    background.add_task(send_email, user.email, content.subject, content.text, content.html)
     delivery = "queued" if email_configured() else "not_configured"
     await record_audit(db, action="auth.password_forgot", actor_user_id=user.id,
                        ip_hash=hash_ip(client_ip(request)), meta={"delivery": delivery})
     result: dict[str, object] = dict(generic)
     if s.expose_dev_reset_tokens and not s.is_production:
-        result["dev_reset_token"] = token
+        result["dev_reset_code"] = code
         result["dev_delivery"] = delivery
     return result
 
 
 @router.post("/password/reset", response_model=Message, dependencies=[Depends(rate_limit_auth)])
 async def reset_password(payload: PasswordResetRequest, db: AsyncSession = Depends(get_db)) -> Message:
+    await rate_limit_account(payload.email)
+    s = get_settings()
+    invalid = AppError("This code is incorrect or has expired. Please check it or request a new one.",
+                       code="reset_invalid")
+    user = await db.scalar(select(User).where(func.lower(User.email) == payload.email.lower()))
+    if user is None or not user.is_active:
+        raise invalid
     record = await db.scalar(
-        select(PasswordResetToken).where(
-            PasswordResetToken.token_hash == keyed_hash(payload.token, "reset")
-        )
+        select(PasswordResetToken)
+        .where(PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None))
+        .order_by(PasswordResetToken.created_at.desc()).limit(1)
     )
     now = utcnow()
-    if record is None or record.used_at is not None:
-        raise AppError("This reset link is invalid or has already been used.", code="reset_invalid")
+    if record is None:
+        raise invalid
     expires = record.expires_at if record.expires_at.tzinfo else record.expires_at.replace(tzinfo=UTC)
     if expires < now:
-        raise AppError("This reset link has expired. Please request a new one.", code="reset_expired")
-    user = await db.get(User, record.user_id)
-    if user is None:
-        raise AppError("This reset link is invalid.", code="reset_invalid")
+        raise AppError("This code has expired. Please request a new one.", code="reset_expired")
+    if not hmac.compare_digest(record.token_hash, _reset_code_hash(record.id, payload.code)):
+        record.attempts += 1
+        if record.attempts >= s.password_reset_max_attempts:
+            record.used_at = now  # too many wrong codes: this code is burned
+        await record_audit(db, action="auth.password_reset", actor_user_id=user.id, outcome="failure",
+                           meta={"attempts": record.attempts})
+        await db.commit()
+        raise invalid
     user.password_hash = hash_password(payload.new_password)
-    # Consume every outstanding reset link for this account, not just this one.
-    await db.execute(update(PasswordResetToken).where(
-        PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None)).values(used_at=now))
+    record.used_at = now
     # Sign out everywhere after a password reset.
     await db.execute(
         update(AuthSession)
@@ -267,6 +290,50 @@ async def reset_password(payload: PasswordResetRequest, db: AsyncSession = Depen
     )
     await record_audit(db, action="auth.password_reset", actor_user_id=user.id)
     return Message(message="Your password has been reset. Please sign in.")
+
+
+@router.get("/providers", response_model=AuthProvidersOut)
+async def auth_providers() -> AuthProvidersOut:
+    """Sign-in methods the web client should offer. A Google client ID is public by design."""
+    return AuthProvidersOut(google_client_id=get_settings().google_client_id)
+
+
+@router.post("/google", response_model=AuthResponse, dependencies=[Depends(rate_limit_auth)])
+async def google_login(
+    payload: GoogleLoginRequest, request: Request, response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> AuthResponse:
+    identity = await verify_google_credential(payload.credential)
+    ip = hash_ip(client_ip(request))
+    user = await db.scalar(select(User).where(User.google_sub == identity.sub))
+    if user is None:
+        user = await db.scalar(select(User).where(func.lower(User.email) == identity.email))
+        if user is None:
+            user = User(
+                email=identity.email,
+                full_name=(identity.name or identity.email.split("@")[0])[:200],
+                password_hash=hash_password(new_opaque_token()),  # no usable password until a reset
+                google_sub=identity.sub,
+            )
+            user.preferences = UserPreferences(language=payload.language)
+            db.add(user)
+            await db.flush()
+            await record_audit(db, action="auth.register", actor_user_id=user.id, resource_type="user",
+                               resource_id=user.id, ip_hash=ip, meta={"method": "google"})
+        else:
+            # First Google sign-in to an existing account. Registration does not verify email, so
+            # someone else may have registered the Google user's address: replace the password and
+            # end existing sessions so only the verified owner keeps access.
+            user.google_sub = identity.sub
+            user.password_hash = hash_password(new_opaque_token())
+            await db.execute(update(AuthSession).where(
+                AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None)).values(revoked_at=utcnow()))
+            await record_audit(db, action="auth.google_linked", actor_user_id=user.id, ip_hash=ip)
+    if not user.is_active:
+        raise AuthError("This account is not active.", code="account_inactive")
+    user.last_login_at = utcnow()
+    await record_audit(db, action="auth.login", actor_user_id=user.id, ip_hash=ip, meta={"method": "google"})
+    return await _issue_session(db, user, request, response)
 
 
 @router.get("/me", response_model=UserOut)

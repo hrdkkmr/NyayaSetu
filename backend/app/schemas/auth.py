@@ -58,13 +58,24 @@ class PasswordForgotRequest(BaseModel):
 
 
 class PasswordResetRequest(BaseModel):
-    token: str = Field(min_length=20, max_length=200)
+    email: EmailStr
+    code: str = Field(pattern=r"^\d{6}$")
     new_password: str = Field(max_length=200)
 
     @field_validator("new_password")
     @classmethod
     def _password(cls, value: str) -> str:
         return _check_password(value)
+
+
+class GoogleLoginRequest(BaseModel):
+    credential: str = Field(min_length=20, max_length=4096)
+    # Used only when the Google sign-in creates a new account.
+    language: str = Field(default="en", pattern="^(en|hi)$")
+
+
+class AuthProvidersOut(BaseModel):
+    google_client_id: str | None
 
 
 class PasswordChangeRequest(BaseModel):

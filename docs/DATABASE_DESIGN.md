@@ -10,10 +10,10 @@ Enumerations are stored as strings (`app/models/enums.py`) to keep migrations si
 ## Tables (30)
 | Group | Table | Purpose / key fields |
 |---|---|---|
-| Identity | `users` | email (unique), full_name, phone, password_hash (argon2), role, deletion_requested_at |
+| Identity | `users` | email (unique), full_name, phone, password_hash (argon2), google_sub (unique, nullable), role, deletion_requested_at |
 | | `user_preferences` | language, text_scale, contrast/motion, voice settings, **consent flags** + consents_updated_at |
 | | `auth_sessions` | refresh_token_hash (unique, HMAC), ip_hash, expires/revoked |
-| | `password_reset_tokens` | token_hash, expires_at, used_at |
+| | `password_reset_tokens` | token_hash (HMAC of record id + 6-digit code), expires_at, used_at, attempts |
 | Cases | `cases` | user_id, reference (unique), category, status, incident fields, `analysis` JSON (rule outcomes, routes, missing info), archived_at |
 | | `case_parties` | role, name, address, provenance (reserved for multi-party cases; current parties derive from facts) |
 | | `case_facts` | key, value, **provenance** (user_stated / user_confirmed / document_extracted / ai_inference), status (active/superseded/rejected), source_type/id, excerpt, confidence |

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, IdMixin, TimestampMixin
@@ -18,6 +18,8 @@ class User(IdMixin, TimestampMixin, Base):
     full_name: Mapped[str] = mapped_column(String(200))
     phone: Mapped[str | None] = mapped_column(String(20))
     password_hash: Mapped[str] = mapped_column(String(255))
+    # Google account subject ("sub" claim) once the user has signed in with Google.
+    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
     role: Mapped[str] = mapped_column(String(32), default=UserRole.CITIZEN, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -77,3 +79,5 @@ class PasswordResetToken(IdMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Wrong one-time codes entered; the code is consumed at PASSWORD_RESET_MAX_ATTEMPTS.
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

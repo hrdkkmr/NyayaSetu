@@ -8,6 +8,7 @@ import { Suspense, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { GoogleSignIn } from "@/components/google-sign-in";
 import { Button } from "@/components/ui/button";
 import { Alert, Card, CardBody, Field, Input } from "@/components/ui/primitives";
 import { api, ApiError } from "@/lib/api";
@@ -41,6 +42,7 @@ function LoginForm() {
       <CardBody className="space-y-5 py-6">
         <h1 className="text-2xl font-bold text-navy-900">{t("auth.loginTitle")}</h1>
         {error && <Alert tone="danger">{error}</Alert>}
+        <GoogleSignIn next={safeNext(params.get("next"))} />
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
           <Field id="email" label={t("auth.email")} error={formState.errors.email && t("auth.email")}>
             <Input id="email" type="email" autoComplete="email" {...register("email")} aria-invalid={!!formState.errors.email} />

@@ -16,7 +16,8 @@ API + worker: `ENVIRONMENT=production`, `SECRET_KEY` (≥32 random chars), `DATA
 (`postgresql+asyncpg://…`), `REDIS_URL`, `COOKIE_SECURE=true`, `CORS_ORIGINS=https://your-web-origin`,
 `PUBLIC_APP_URL`, `STORAGE_BACKEND=s3`, `S3_*`, `STORAGE_ENCRYPTION_KEY` (base64 32 bytes — back it
 up; losing it makes stored documents unreadable), `SMTP_*` for password resets/reminders.
-Optional: `ANTHROPIC_API_KEY`, `SARVAM_API_KEY`, `EMBEDDING_*`, `SENTRY_DSN`,
+Optional: LLM (`LLM_PROVIDER=openai_compatible` + `LLM_API_BASE`/`LLM_API_KEY`/`LLM_MODEL` for
+Grok/Groq, or `ANTHROPIC_API_KEY`), `SARVAM_API_KEY`, `EMBEDDING_*`, `SENTRY_DSN`,
 `OTEL_EXPORTER_OTLP_ENDPOINT`.
 
 Web: `BACKEND_URL=https://api.your-domain` (server-side proxy target),
@@ -33,6 +34,28 @@ dev reset tokens, wildcard CORS).
 5. Create an admin: `echo "<password>" | python -m app.cli create-admin admin@org "Name"`.
 6. Sign in → Operations → Integration health; confirm intended services show OK.
 7. Smoke test: register, describe a consumer problem, reach analysis, generate drafts, download PDF.
+
+## Render (API) + Vercel (web)
+*Recipe derived from this repository's configuration; not yet deployed and verified.*
+
+Quickest path: Render → New → **Blueprint** → this repo. `render.yaml` creates the free Postgres
+database and the API (migrations + ingestion run on start) and asks for the secret values; then do
+steps 3–5. Manual alternative:
+
+1. **Postgres** — Render → New → PostgreSQL. Copy the *Internal Database URL* into `DATABASE_URL`
+   (the app converts `postgresql://` to `postgresql+asyncpg://`). The migration runs
+   `CREATE EXTENSION IF NOT EXISTS vector`.
+2. **API** — Render → New → Web Service → this repo, runtime Docker, root directory `backend`.
+   Environment: the backend sections of `.env.example` (`ENVIRONMENT=production`, `PORT=8000`,
+   `FORWARDED_ALLOW_IPS=*`, `CORS_ORIGINS`/`PUBLIC_APP_URL` = the Vercel URL). Health check path
+   `/health/ready`. If pre-deploy commands are unavailable on your plan, override the Docker command:
+   `sh -c "alembic upgrade head && python -m app.cli ingest && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'"`
+   (ingestion is idempotent).
+3. **Web** — Vercel → Add New Project → this repo, root directory `frontend`. Environment:
+   `BACKEND_URL=https://<api>.onrender.com`, `NEXT_PUBLIC_API_WS_URL=wss://<api>.onrender.com`.
+   Both are read at build time; redeploy after changing them.
+4. Put the final Vercel URL into the API's `CORS_ORIGINS` and `PUBLIC_APP_URL`, then redeploy the API.
+5. Continue from step 5 below (admin, health page, smoke test).
 
 ## Local full stack
 ```bash

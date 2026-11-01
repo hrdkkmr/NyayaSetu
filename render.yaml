@@ -1,0 +1,64 @@
+# Render Blueprint: Postgres + the FastAPI API (free plans, suitable for a demo).
+# Render dashboard -> New -> Blueprint -> pick this repo. Values marked `sync: false` are asked for
+# when the Blueprint is created (secrets never live in git). See docs/DEPLOYMENT_GUIDE.md.
+databases:
+  - name: nyayasetu-db
+    plan: free
+    databaseName: nyayasetu
+    user: nyayasetu
+
+services:
+  - type: web
+    name: nyayasetu-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health/ready
+    # Free plans have no pre-deploy step: migrate and load the legal sources (idempotent) on start.
+    dockerCommand: >-
+      sh -c "alembic upgrade head && python -m app.cli ingest &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'"
+    envVars:
+      - key: DATABASE_URL            # postgresql:// is converted to postgresql+asyncpg:// by the app
+        fromDatabase:
+          name: nyayasetu-db
+          property: connectionString
+      - key: ENVIRONMENT
+        value: production
+      - key: PORT
+        value: "8000"
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: STORAGE_ENCRYPTION_KEY  # base64 of exactly 32 bytes
+        sync: false
+      - key: STORAGE_BACKEND         # free disk is wiped on restart; fine for a demo
+        value: local
+      - key: CORS_ORIGINS            # your Vercel URL, e.g. https://nyayasetu.vercel.app
+        sync: false
+      - key: PUBLIC_APP_URL          # same Vercel URL (used in emails)
+        sync: false
+      - key: LLM_PROVIDER
+        value: openai_compatible
+      - key: LLM_API_BASE
+        value: https://api.groq.com/openai/v1
+      - key: LLM_MODEL
+        value: openai/gpt-oss-120b
+      - key: LLM_API_KEY
+        sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: GOOGLE_CLIENT_ID        # optional; leave empty to hide the Google button
+        sync: false
+      - key: OCR_PROVIDER
+        value: tesseract

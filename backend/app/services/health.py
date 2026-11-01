@@ -46,12 +46,14 @@ async def check_integrations(db: AsyncSession, include_external: bool = True) ->
     ok, detail = await get_storage().health()
     results["storage"] = _status(ok, f"{get_storage().name}: {detail}")
     results["llm"] = _status(True if s.llm_configured else None,
-                             f"Anthropic {s.anthropic_model}" if s.llm_configured else
-                             "ANTHROPIC_API_KEY not set; rule-based agents are used")
+                             s.llm_description if s.llm_configured else
+                             "No LLM credentials set; rule-based agents are used")
     results["speech_sarvam"] = _status(True if sarvam_configured() else None,
                                        "configured" if sarvam_configured() else "SARVAM_API_KEY not set; browser speech only")
     results["ocr"] = _status(True if ocr_available() else None,
                              "Tesseract available" if ocr_available() else "Tesseract not installed; scanned files cannot be read")
+    results["google_sign_in"] = _status(True if s.google_client_id else None,
+                                        "configured" if s.google_client_id else "GOOGLE_CLIENT_ID not set; button hidden")
     results["email"] = _status(True if email_configured() else None,
                                "SMTP configured" if email_configured() else "SMTP not set; emails are not sent")
     caps = ejagriti.capabilities()

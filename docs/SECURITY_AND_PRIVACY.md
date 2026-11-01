@@ -13,8 +13,14 @@ unless marked otherwise.
 - Rate limits: auth endpoints per IP **and per account** (default 10/min), authenticated users per user
   (120/min), per voice turn; Redis-backed when configured. Client IP comes from the connection;
   `X-Forwarded-For` is honoured only for proxies in `FORWARDED_ALLOW_IPS` (uvicorn `--proxy-headers`).
-- Refresh-token reuse revokes every session of the account; rotation is atomic. Using one reset link
-  consumes all outstanding links; reset emails are sent after the response (no timing signal).
+- Refresh-token reuse revokes every session of the account; rotation is atomic. Password reset uses a
+  6-digit email code (10 min): only the newest code is valid, it is stored as an HMAC bound to its
+  record, and it is burned after 5 wrong attempts (plus per-IP and per-account rate limits). Reset
+  emails are sent after the response (no timing signal).
+- Google sign-in: the Google ID token's signature (Google's published keys), audience
+  (`GOOGLE_CLIENT_ID`), issuer, expiry and `email_verified` are checked server-side. The Google
+  `sub` is stored on the user. Linking Google to an existing account with the same email replaces
+  that account's password and revokes its sessions, because registration does not verify email.
 - Voice: single-use 60 s tickets (in-process registry), auth session re-checked on connect and every
   turn, 5-minute idle and 2-hour maximum session.
 
