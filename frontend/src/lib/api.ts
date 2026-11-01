@@ -89,9 +89,17 @@ export async function download(path: string, filename: string): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/** Normalises a configured socket origin: accepts ws(s)://, http(s):// (mapped to ws(s)) or a bare host (wss). */
+export function normaliseWsUrl(value: string): string {
+  const v = value.trim().replace(/\/+$/, "");
+  if (/^wss?:\/\//.test(v)) return v;
+  if (/^https?:\/\//.test(v)) return v.replace(/^http/, "ws");
+  return `wss://${v}`;
+}
+
 export function wsBase(): string {
-  const configured = process.env.NEXT_PUBLIC_API_WS_URL;
-  if (configured) return configured.replace(/\/$/, "");
+  const configured = process.env.NEXT_PUBLIC_API_WS_URL?.trim();
+  if (configured) return normaliseWsUrl(configured);
   if (typeof window === "undefined") return "";
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${window.location.host}`;

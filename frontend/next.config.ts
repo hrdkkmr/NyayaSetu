@@ -1,8 +1,10 @@
 import type { NextConfig } from "next";
 
 // The browser talks to same-origin /api/*; Next.js proxies it to the FastAPI backend so
-// authentication cookies stay first-party. BACKEND_URL is a server-side setting.
-const backend = (process.env.BACKEND_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// authentication cookies stay first-party. BACKEND_URL is a server-side setting; a bare host
+// ("api.example.com") is accepted and treated as https.
+const rawBackend = (process.env.BACKEND_URL ?? "").trim() || "http://localhost:8000";
+const backend = (/^https?:\/\//.test(rawBackend) ? rawBackend : `https://${rawBackend}`).replace(/\/+$/, "");
 
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },

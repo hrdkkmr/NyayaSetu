@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { normaliseWsUrl } from "@/lib/api";
 import en from "@/lib/i18n/en";
 import hi from "@/lib/i18n/hi";
 import { encodeWav } from "@/lib/voice/mic";
@@ -56,5 +57,14 @@ describe("safeNext (post-login redirect)", () => {
     expect(safeNext(String.raw`/\evil.com`)).toBe("/dashboard");
     expect(safeNext("https://evil.com")).toBe("/dashboard");
     expect(safeNext(null)).toBe("/dashboard");
+  });
+});
+
+describe("normaliseWsUrl", () => {
+  it("accepts ws, http(s) and bare hosts", () => {
+    expect(normaliseWsUrl("wss://api.example.com/")).toBe("wss://api.example.com");
+    expect(normaliseWsUrl("https://api.example.com")).toBe("wss://api.example.com");
+    expect(normaliseWsUrl("http://localhost:8000")).toBe("ws://localhost:8000");
+    expect(normaliseWsUrl(" api.example.com ")).toBe("wss://api.example.com");
   });
 });
