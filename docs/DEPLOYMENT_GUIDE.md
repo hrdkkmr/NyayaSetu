@@ -48,9 +48,8 @@ steps 3–5. Manual alternative:
 2. **API** — Render → New → Web Service → this repo, runtime Docker, root directory `backend`.
    Environment: the backend sections of `.env.example` (`ENVIRONMENT=production`, `PORT=8000`,
    `FORWARDED_ALLOW_IPS=*`, `CORS_ORIGINS`/`PUBLIC_APP_URL` = the Vercel URL). Health check path
-   `/health/ready`. If pre-deploy commands are unavailable on your plan, override the Docker command:
-   `sh -c "alembic upgrade head && python -m app.cli ingest && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'"`
-   (ingestion is idempotent).
+   `/health/ready`. If pre-deploy commands are unavailable on your plan, set the Docker command to
+   `sh scripts/start-with-release.sh` (migrations + ingestion, then uvicorn on `$PORT`) (ingestion is idempotent).
 3. **Web** — Vercel → Add New Project → this repo, root directory `frontend`. Environment:
    `BACKEND_URL=https://<api>.onrender.com`, `NEXT_PUBLIC_API_WS_URL=wss://<api>.onrender.com`.
    Both are read at build time; redeploy after changing them.

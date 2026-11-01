@@ -16,10 +16,11 @@ services:
     dockerContext: ./backend
     healthCheckPath: /health/ready
     # Free plans have no pre-deploy step: migrate and load the legal sources (idempotent) on start.
-    dockerCommand: >-
-      sh -c "alembic upgrade head && python -m app.cli ingest &&
-      uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'"
+    # Kept in a script because Render does not apply shell quoting to dockerCommand.
+    dockerCommand: sh scripts/start-with-release.sh
     envVars:
+      - key: FORWARDED_ALLOW_IPS     # only Render's proxy can reach the service
+        value: "*"
       - key: DATABASE_URL            # postgresql:// is converted to postgresql+asyncpg:// by the app
         fromDatabase:
           name: nyayasetu-db
