@@ -14,12 +14,13 @@ Provisions encoded (all read from the official documents in data/legal_sources):
   * Free / personal service exclusion - section 2(42)
   * Orders the Commission may make    - section 39(1)
   * Appeal period         - section 41
+  * Admissibility target  - section 36(2), second proviso (ordinarily within 21 days of filing)
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -257,6 +258,23 @@ def appeal_period() -> RuleOutcome:
         "An appeal against a District Commission order lies to the State Commission within 45 days of the order.",
         "ज़िला आयोग के आदेश के ख़िलाफ़ अपील आदेश की तारीख से 45 दिन के अंदर राज्य आयोग में की जा सकती है।",
         [Basis("cpa_2019", "Section 41", "Appeal against order of District Commission")],
+    )
+
+
+ADMISSIBILITY_TARGET_DAYS = 21
+
+
+def admissibility_target(filed_on: date) -> RuleOutcome:
+    target = filed_on + timedelta(days=ADMISSIBILITY_TARGET_DAYS)
+    return RuleOutcome(
+        "admissibility_target", {"target_date": target.isoformat(), "filed_on": filed_on.isoformat()},
+        f"The District Commission should ordinarily decide whether to admit the complaint within 21 days of "
+        f"filing, that is by {target:%d %B %Y}. This is a target for the Commission, not a guaranteed date.",
+        f"ज़िला आयोग को सामान्यतः दायर करने के 21 दिन के अंदर, यानी {target:%d-%m-%Y} तक, शिकायत स्वीकार करने पर "
+        "फ़ैसला करना चाहिए। यह आयोग के लिए लक्ष्य है, पक्की तारीख नहीं।",
+        [Basis("cpa_2019", "Section 36",
+               "Admissibility ordinarily decided within twenty-one days of filing (section 36(2), second proviso)")],
+        caveats=["Counted from the submission date you reported. The Commission may take longer."],
     )
 
 

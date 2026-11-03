@@ -14,7 +14,7 @@ import { useI18n } from "@/lib/i18n";
 import type { Evidence, GeneratedDoc, Upload } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 
-const ACCEPTABLE = new Set(["amount_paid", "purchase_date", "seller_name"]);
+const ACCEPTABLE = new Set(["amount_paid", "purchase_date", "seller_name", "product"]);
 
 export function DocumentsTab({ caseId, reference }: { caseId: string; reference: string }) {
   const { t, lang, dict } = useI18n();
@@ -142,6 +142,7 @@ export function DocumentsTab({ caseId, reference }: { caseId: string; reference:
                           <li key={key} className="flex flex-wrap items-center gap-2">
                             <span className="text-muted">{key.replace(/_/g, " ")}:</span>
                             <span className="font-medium">{f.value}</span>
+                            {f.method === "ai" && <Badge tone="warning">{t("documents.readByAi")}</Badge>}
                             {ACCEPTABLE.has(key) && (
                               <Button size="sm" variant="link" onClick={() => accept.mutate({ id: u.id, field: key })}>{t("documents.useField")}</Button>
                             )}

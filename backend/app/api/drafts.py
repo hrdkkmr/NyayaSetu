@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.agents.graph import CORE_DOCUMENTS, run_case_workflow
+from app.agents.planning import sync_admissibility_deadline
 from app.api import serializers as ser
 from app.core.audit import record_audit
 from app.core.deps import RequestContext, get_context, get_owned_case
@@ -32,7 +33,8 @@ from app.db.base import utcnow
 from app.db.session import get_db
 from app.documents.render import render_docx, render_pdf
 from app.integrations import browser_assist, ejagriti
-from app.models import Approval, Case, CaseUpdate, FilingRecord, GeneratedDocument, UploadedDocument
+from app.integrations import ejagriti_copilot as copilot
+from app.models import Approval, Case, CaseUpdate, DocumentVersion, FilingRecord, GeneratedDocument, UploadedDocument
 from app.models.enums import (
     ApprovalAction,
     ApprovalStatus,
@@ -382,6 +384,45 @@ async def run_browser_assist(case_id: uuid.UUID, filing_id: uuid.UUID, ctx: Requ
     return ser.filing(record)
 
 
+@router.get("/cases/{case_id}/filing/{filing_id}/copilot-bundle")
+async def copilot_bundle(case_id: uuid.UUID, filing_id: uuid.UUID, ctx: RequestContext = Depends(get_context),
+                         db: AsyncSession = Depends(get_db)) -> Response:
+    """ZIP with the approved PDFs, a packet of confirmed details and a local Playwright co-pilot script.
+
+    Needs both filing authorisations over the current approved versions. The script runs on the
+    citizen's computer and stops at HITL_AWAITING_CITIZEN_OTP_AND_SUBMIT; it never submits."""
+    case = await get_owned_case(db, case_id, ctx.user)
+    record = await _owned_filing(db, case, filing_id)
+    if record.status == FilingStatus.VERIFIED:
+        raise ConflictError("This filing has already been verified.", code="filing_verified")
+    if await valid_authorization(db, case, ApprovalAction.SUBMIT_FILING) is None or             await valid_authorization(db, case, ApprovalAction.SHARE_EXTERNAL) is None:
+        raise ApprovalRequiredError("The co-pilot needs your filing authorisation, including permission to "
+                                    "enter your details on the portal, over the current approved documents.")
+    version_ids, _ = await _approved_versions(db, case)
+    versions = (await db.scalars(select(DocumentVersion).where(
+        DocumentVersion.id.in_([uuid.UUID(v) for v in version_ids])))).all()
+    docs = {d.id: d for d in await _core_docs(db, case.id)}
+    packet_docs = []
+    for v in sorted(versions, key=lambda v: CORE_DOCUMENTS.index(docs[v.generated_document_id].doc_type)):
+        doc = docs[v.generated_document_id]
+        packet_docs.append(copilot.PacketDocument(
+            doc_type=doc.doc_type, title=doc.title, filename=f"{doc.doc_type}_{case.reference}_v{v.version_number}.pdf",
+            pdf=render_pdf(v.content, version_label=f"v{v.version_number} (approved)", draft=False),
+            version_number=v.version_number, content_sha256=v.content_sha256))
+    forum = ((case.analysis or {}).get("rule_outcomes", {}).get("pecuniary_forum") or {})
+    packet = copilot.build_packet(
+        case_reference=case.reference, portal_url=ejagriti.get_settings().ejagriti_base_url,
+        data_sheet=ejagriti.data_sheet(await load_slots(db, case.id)),
+        forum=str(forum["value"]).capitalize() if forum.get("grounded") and forum.get("value") else None,
+        documents=packet_docs, generated_at=utcnow())
+    await record_audit(db, action="filing.copilot_bundle", actor_user_id=ctx.user.id, resource_type="filing_record",
+                       resource_id=record.id, case_id=case.id, ip_hash=ctx.ip_hash,
+                       meta={"documents": len(packet_docs)})
+    return Response(copilot.build_bundle(packet, packet_docs), media_type="application/zip", headers={
+        "Content-Disposition": f'attachment; filename="nyayasetu-copilot-{case.reference}.zip"',
+        "Cache-Control": "no-store"})
+
+
 @router.post("/cases/{case_id}/filing/{filing_id}/acknowledgement")
 async def record_acknowledgement(case_id: uuid.UUID, filing_id: uuid.UUID, payload: AcknowledgementIn,
                                  ctx: RequestContext = Depends(get_context),
@@ -414,6 +455,7 @@ async def record_acknowledgement(case_id: uuid.UUID, filing_id: uuid.UUID, paylo
                       title=f"Complaint submitted on e-Jagriti (reference {record.acknowledgement_number})",
                       body="Reported by you. Not yet verified against the official portal.",
                       event_date=payload.submitted_on, verified=False, created_by_user_id=ctx.user.id))
+    await sync_admissibility_deadline(db, case.id, payload.submitted_on)
     await db.flush()
     await record_audit(db, action="filing.acknowledgement_recorded", actor_user_id=ctx.user.id,
                        resource_type="filing_record", resource_id=record.id, case_id=case.id, ip_hash=ctx.ip_hash,

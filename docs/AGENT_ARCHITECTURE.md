@@ -53,6 +53,22 @@ user has `consent_external_ai` and a key is configured. Safeguards: excerpt must
 user's text or the fact becomes an inference; rephrasings rejected if they cite unretrieved
 provisions or make guarantees; any LLM error falls back to rules.
 
+Backup model: `LLM_FALLBACK_MODEL` is tried once when the primary is rate-limited, down or returns
+unusable output (not on rejected credentials). Every call is logged per request (`track_llm_calls`,
+a context variable), and each run reports `ai_status` (`ai`, `ai_backup`, `ai_partial`,
+`rules_fallback`, `rules`), shown as a badge in the conversation.
+
+Names (`complainant_name`, `seller_name`) must appear verbatim in the user's message; otherwise
+the extracted value (e.g. a transliteration) is stored as `ai_inference` and must be confirmed.
+
+## Agent trace
+Each recorded node run is appended to the run's trace with a plain stage name (`safety_guard`,
+`intake_and_extract`, `classify_dispute`, `gap_analysis_router`, `neuro_symbolic_research`,
+`planning`, `document_drafter_and_critic`, `filing_readiness`, `case_tracking`). The turn response
+carries it, and the "Live agent telemetry" drawer shows it with `GET /cases/{id}/agent-trace`,
+whose provenance section re-reads each rule's provision from Postgres. The stage names label the
+existing LangGraph nodes; the graph itself is unchanged.
+
 ## Recovery
 Each node runs in a savepoint with one retry; failures produce an `agent_executions` error row
 and a polite bilingual message, and the workflow remains resumable. Unparseable answers get a

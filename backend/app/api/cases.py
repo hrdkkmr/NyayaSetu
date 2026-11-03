@@ -6,11 +6,12 @@ from datetime import date
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.graph import run_case_workflow
+from app.agents.graph import STAGES, run_case_workflow
 from app.agents.safety import sanitize_user_text
 from app.api import serializers as ser
 from app.core.audit import record_audit
@@ -20,6 +21,7 @@ from app.db.base import utcnow
 from app.db.session import get_db
 from app.domains.consumer.slots import SLOT_BY_KEY, SLOTS
 from app.models import (
+    AgentExecution,
     Approval,
     AuditLog,
     Case,
@@ -30,6 +32,7 @@ from app.models import (
     Deadline,
     FilingRecord,
     GeneratedDocument,
+    LegalChunk,
     LegalCitation,
     Notification,
     UploadedDocument,
@@ -47,6 +50,7 @@ from app.models.enums import (
     UpdateSource,
 )
 from app.services import facts as fact_service
+from app.services.calendar import build_ics
 
 router = APIRouter(tags=["cases"])
 
@@ -76,7 +80,7 @@ class FactIn(BaseModel):
 class DeadlineIn(BaseModel):
     title: str = Field(min_length=2, max_length=300)
     due_date: date
-    kind: Literal["hearing", "response", "user"] = "user"
+    kind: Literal["hearing", "response", "user", "legal_notice"] = "user"
     reminder_days_before: int = Field(default=3, ge=0, le=60)
 
 
@@ -135,6 +139,7 @@ async def post_message(db: AsyncSession, case: Case, ctx: RequestContext, text: 
         "assistant_message": {**ser.message(bot_msg), "content": reply, "cards": result.cards},
         "phase": result.phase, "asked_slot": result.asked_slot, "language": result.language,
         "case": ser.case_summary(case), "errors": result.errors,
+        "trace": result.trace, "ai_status": result.ai_status,
     }
 
 
@@ -250,7 +255,7 @@ async def get_case(case_id: uuid.UUID, ctx: RequestContext = Depends(get_context
                      "category": state.get("category"), "category_confidence": state.get("category_confidence"),
                      "routing": state.get("routing"), "last_error": workflow.last_error if workflow else None,
                      "steps": [ser.step(s) for s in steps]},
-        "deadlines": [ser.deadline(d) for d in deadlines],
+        "deadlines": [ser.deadline(d, case.reference) for d in deadlines],
         "counts": counts,
     }
 
@@ -415,24 +420,70 @@ async def update_step(case_id: uuid.UUID, step_key: str, status: Literal["done",
     return ser.step(step)
 
 
+@router.get("/cases/{case_id}/agent-trace")
+async def agent_trace(case_id: uuid.UUID, limit: int = Query(default=40, ge=1, le=200),
+                      ctx: RequestContext = Depends(get_context), db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Recorded agent runs for this case, plus the provisions behind each rule outcome, read from the
+    knowledge base at request time (so the trace shows where every legal conclusion comes from)."""
+    case = await get_owned_case(db, case_id, ctx.user)
+    rows = (await db.scalars(select(AgentExecution).where(AgentExecution.case_id == case.id)
+                             .order_by(AgentExecution.created_at.desc()).limit(limit))).all()
+    executions = [{
+        "stage": STAGES.get(r.agent, r.agent), "agent": r.agent, "status": r.status, "provider": r.provider,
+        "model": r.model, "attempt": r.attempt, "latency_ms": r.latency_ms, "summary": r.summary or {},
+        # Only the exception type: messages can echo user input.
+        "error": (r.error or "").split(":", 1)[0] or None, "created_at": r.created_at.isoformat(),
+    } for r in rows]
+    outcomes: dict[str, Any] = (case.analysis or {}).get("rule_outcomes") or {}
+    chunk_ids = {uuid.UUID(b["chunk_id"]) for o in outcomes.values() for b in o.get("basis", []) if b.get("chunk_id")}
+    chunks = {c.id: c for c in (await db.scalars(select(LegalChunk).where(LegalChunk.id.in_(chunk_ids)))).all()}         if chunk_ids else {}
+    provenance = []
+    for key, outcome in outcomes.items():
+        for b in outcome.get("basis", []):
+            chunk = chunks.get(uuid.UUID(b["chunk_id"])) if b.get("chunk_id") else None
+            provenance.append({
+                "rule": key, "grounded": bool(outcome.get("grounded")), "section_ref": b.get("section_ref"),
+                "summary": b.get("summary"), "document_title": chunk.document.title if chunk else b.get("document_title"),
+                "source_url": chunk.document.source_url if chunk else b.get("source_url"),
+                "chunk_id": b.get("chunk_id"), "in_knowledge_base": chunk is not None,
+                "excerpt": " ".join(chunk.text.split())[:360] if chunk else None,
+            })
+    return {"executions": executions, "provenance": provenance, "fetched_at": utcnow().isoformat()}
+
+
 @router.get("/cases/{case_id}/deadlines")
 async def list_deadlines(case_id: uuid.UUID, ctx: RequestContext = Depends(get_context),
                          db: AsyncSession = Depends(get_db)) -> list[dict[str, Any]]:
     case = await get_owned_case(db, case_id, ctx.user)
-    return [ser.deadline(d) for d in (await db.scalars(select(Deadline).where(Deadline.case_id == case.id)
-                                                       .order_by(Deadline.due_date))).all()]
+    return [ser.deadline(d, case.reference) for d in (await db.scalars(
+        select(Deadline).where(Deadline.case_id == case.id).order_by(Deadline.due_date))).all()]
+
+
+@router.get("/cases/{case_id}/deadlines.ics")
+async def deadlines_calendar(case_id: uuid.UUID, ctx: RequestContext = Depends(get_context),
+                             db: AsyncSession = Depends(get_db)) -> Response:
+    """Open deadlines as an iCalendar file for any calendar app."""
+    case = await get_owned_case(db, case_id, ctx.user)
+    rows = (await db.scalars(select(Deadline).where(Deadline.case_id == case.id,
+                                                    Deadline.status == DeadlineStatus.OPEN)
+                             .order_by(Deadline.due_date))).all()
+    body = build_ics(rows, case.reference, utcnow())
+    return Response(body, media_type="text/calendar; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="nyayasetu-{case.reference}.ics"'})
 
 
 @router.post("/cases/{case_id}/deadlines", status_code=201)
 async def add_deadline(case_id: uuid.UUID, payload: DeadlineIn, ctx: RequestContext = Depends(get_context),
                        db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     case = await get_owned_case(db, case_id, ctx.user)
+    basis = ("The reply deadline you set in your own legal notice. Not a period fixed by law."
+             if payload.kind == DeadlineKind.LEGAL_NOTICE else "Added by you")
     d = Deadline(case_id=case.id, title=payload.title, due_date=payload.due_date, kind=DeadlineKind(payload.kind),
-                 source=UpdateSource.USER_REPORTED, basis="Added by you", is_estimate=False,
+                 source=UpdateSource.USER_REPORTED, basis=basis, is_estimate=False,
                  reminder_days_before=payload.reminder_days_before)
     db.add(d)
     await db.flush()
-    return ser.deadline(d)
+    return ser.deadline(d, case.reference)
 
 
 @router.patch("/cases/{case_id}/deadlines/{deadline_id}")
@@ -443,7 +494,7 @@ async def patch_deadline(case_id: uuid.UUID, deadline_id: uuid.UUID, payload: De
     if d is None:
         raise NotFoundError("Deadline not found.")
     d.status = DeadlineStatus(payload.status)
-    return ser.deadline(d)
+    return ser.deadline(d, case.reference)
 
 
 @router.get("/cases/{case_id}/updates")

@@ -102,8 +102,46 @@ export interface Deadline {
   source: string;
   basis: string | null;
   is_estimate: boolean;
+  google_calendar_url?: string;
   case_id?: string;
   case_title?: string;
+}
+
+export interface TraceEntry {
+  stage: string;
+  agent: string;
+  status: "succeeded" | "failed";
+  provider: string;
+  model: string | null;
+  attempt: number;
+  latency_ms: number;
+  summary: Record<string, unknown>;
+  error?: string | null;
+  created_at?: string;
+}
+
+export interface AiStatus {
+  mode?: "ai" | "ai_backup" | "ai_partial" | "rules_fallback" | "rules";
+  model?: string | null;
+  reason?: string;
+}
+
+export interface ProvenanceEntry {
+  rule: string;
+  grounded: boolean;
+  section_ref: string | null;
+  summary: string | null;
+  document_title: string | null;
+  source_url: string | null;
+  chunk_id: string | null;
+  in_knowledge_base: boolean;
+  excerpt: string | null;
+}
+
+export interface AgentTrace {
+  executions: TraceEntry[];
+  provenance: ProvenanceEntry[];
+  fetched_at: string;
 }
 
 export interface Card {
@@ -130,6 +168,8 @@ export interface TurnResult {
   language: Lang;
   case: CaseSummary;
   errors: { agent: string; error: string }[];
+  trace?: TraceEntry[];
+  ai_status?: AiStatus;
 }
 
 export interface CaseDetail {
@@ -171,7 +211,7 @@ export interface Upload {
   extraction?: {
     method: string;
     language_hint: string | null;
-    fields: Record<string, { value: string; excerpt: string | null; note?: string }>;
+    fields: Record<string, { value: string; excerpt: string | null; note?: string; method?: "ai" }>;
     injection_flags: string[];
     reviewed_at: string | null;
     text_preview: string | null;

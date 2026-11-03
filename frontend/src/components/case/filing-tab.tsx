@@ -1,13 +1,13 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, ClipboardCopy, ExternalLink, Info, Lock, ShieldCheck } from "lucide-react";
+import { CheckCircle2, ClipboardCopy, Download, ExternalLink, Info, Lock, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Alert, Badge, Card, CardBody, CardHeader, CardTitle, Checkbox, Field, Input, Label, Skeleton } from "@/components/ui/primitives";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, download } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { FilingOverview } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
@@ -29,6 +29,10 @@ export function FilingTab({ caseId }: { caseId: string }) {
   const authorize = useMutation({
     mutationFn: () => api(`/cases/${caseId}/filing/authorize`, { method: "POST", body: { statement_accepted: accepted, allow_browser_assist: assist } }),
     onSuccess: invalidate, onError,
+  });
+  const copilot = useMutation({
+    mutationFn: (filingId: string) => download(`/cases/${caseId}/filing/${filingId}/copilot-bundle`, "nyayasetu-copilot.zip"),
+    onError,
   });
   const start = useMutation({
     mutationFn: (mode: "guided" | "browser_assist") => api(`/cases/${caseId}/filing/start`, { method: "POST", body: { mode } }),
@@ -76,12 +80,10 @@ export function FilingTab({ caseId }: { caseId: string }) {
                 <Checkbox id="auth-accept" checked={accepted} onCheckedChange={(c) => setAccepted(c === true)} />
                 <Label htmlFor="auth-accept" className="font-normal">{t("filing.authorize")}</Label>
               </div>
-              {data.capabilities.browser_assist && (
-                <div className="flex items-start gap-3">
-                  <Checkbox id="auth-assist" checked={assist} onCheckedChange={(c) => setAssist(c === true)} />
-                  <Label htmlFor="auth-assist" className="font-normal">{t("filing.allowAssist")}</Label>
-                </div>
-              )}
+              <div className="flex items-start gap-3">
+                <Checkbox id="auth-assist" checked={assist} onCheckedChange={(c) => setAssist(c === true)} />
+                <Label htmlFor="auth-assist" className="font-normal">{t("filing.allowAssist")}</Label>
+              </div>
               <Button onClick={() => authorize.mutate()} disabled={!accepted} loading={authorize.isPending}><Lock aria-hidden />{t("filing.authorize")}</Button>
             </CardBody>
           </Card>
@@ -119,6 +121,19 @@ export function FilingTab({ caseId }: { caseId: string }) {
               <p className="mt-3 text-sm text-muted">
                 {t("filing.uploadRules", { date: data.upload_rules.observed_on, formats: data.upload_rules.formats.join(", "), mb: data.upload_rules.max_file_mb })}
               </p>
+            </CardBody>
+          </Card>
+        )}
+
+        {record && !submitted && (
+          <Card>
+            <CardHeader><CardTitle>{t("filing.copilotTitle")}</CardTitle></CardHeader>
+            <CardBody className="space-y-3">
+              <p>{t("filing.copilotBody")}</p>
+              <p className="text-sm text-muted">{t("filing.copilotNote")}</p>
+              <Button variant="secondary" loading={copilot.isPending} onClick={() => copilot.mutate(record.id)}>
+                <Download aria-hidden />{t("filing.copilotDownload")}
+              </Button>
             </CardBody>
           </Card>
         )}

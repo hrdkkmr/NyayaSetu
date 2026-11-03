@@ -47,6 +47,8 @@ services:
         value: https://api.groq.com/openai/v1
       - key: LLM_MODEL
         value: openai/gpt-oss-120b
+      - key: LLM_FALLBACK_MODEL       # tried once when the primary is rate-limited or down
+        value: openai/gpt-oss-20b
       - key: LLM_API_KEY
         sync: false
       - key: SMTP_HOST

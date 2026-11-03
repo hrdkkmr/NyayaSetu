@@ -11,7 +11,11 @@
 5. **Processing job:** text extraction (pypdf, python-docx, Tesseract OCR if installed; otherwise
    `needs_ocr`), classification (invoice, order confirmation, warranty, communication, payment
    proof, other), field extraction (amount, date, order id, invoice no., GSTIN, seller, emails),
-   prompt-injection flags.
+   prompt-injection flags. With `consent_external_ai`, `agents/evidence.py` also asks the LLM for
+   seller, brand, product, invoice date/number, amount, GSTIN and a defect summary over the
+   wrapped (untrusted) text; a field is kept only if its quote appears in the document and its
+   value passes format checks. Pattern matches take precedence; AI fields are tagged `method: ai`
+   and shown "read by AI — check it".
 6. **Human review:** the user accepts fields (`accept-fields`) → `document_extracted` facts; adds
    documents to the evidence list (auto `Annexure A-n`).
 

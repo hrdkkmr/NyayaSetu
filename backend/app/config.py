@@ -83,6 +83,8 @@ class Settings(BaseSettings):
     llm_api_base: str | None = None
     llm_api_key: str | None = None
     llm_model: str | None = None
+    # Optional second model on the same API, tried once when the primary is rate-limited or down.
+    llm_fallback_model: str | None = None
     llm_timeout_seconds: float = 90.0
 
     # --- Embeddings -------------------------------------------------------------

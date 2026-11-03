@@ -15,7 +15,12 @@ services to verify · **Partial** · **Not implemented** · **Blocked** = by ext
 | LangGraph workflow (persistence, retries, recovery, approval interrupt) | Done | |
 | Intake / classification / research / planning / verification agents (rule path) | Done | |
 | Same agents with Claude | Needs credentials | Tested with a scripted provider |
-| Same agents with an OpenAI-compatible API (xAI Grok, Groq) | Needs credentials | HTTP layer tested with a mock transport; not run against a live API |
+| Same agents with an OpenAI-compatible API (xAI Grok, Groq) | Done | Verified live on Groq (`openai/gpt-oss-120b`); backup model `openai/gpt-oss-20b` hand-off verified live |
+| Agent trace in turn responses + Live agent telemetry drawer with live provenance | Done | |
+| AI status indicator and backup-model routing | Done | |
+| Statutory deadlines: limitation (s.69), admissibility target (s.36(2)); user-set legal-notice deadline; .ics + Google Calendar | Done | |
+| AI evidence extraction from uploads (quote-checked, user review) | Done | Verified live on Groq with synthetic text; OCR on Render (Tesseract in the Docker image) not yet exercised |
+| e-Jagriti local co-pilot bundle (pauses at `HITL_AWAITING_CITIZEN_OTP_AND_SUBMIT`) | Partial | Bundle and script tested offline; never run against the live portal form |
 | Legal ingestion + hybrid retrieval + citations | Done | 3 official documents; pgvector path verified by DDL only |
 | Consumer rules (forum, fee, limitation, territory, consumer status, reliefs, appeal) | Done | Grounded in ingested provisions |
 | Uploads: validation, encryption, extraction, field review, evidence | Done | OCR: Needs credentials (Tesseract binary); antivirus: Not implemented |

@@ -261,7 +261,8 @@ class VoiceConnection:
             turn_id = str(uuid.uuid4())
             await self.send({"type": "assistant_text", "turn_id": turn_id, "text": reply,
                              "cards": result["assistant_message"].get("cards", []), "phase": result.get("phase"),
-                             "language": self.language, "case": result.get("case")})
+                             "language": self.language, "case": result.get("case"),
+                             "trace": result.get("trace", []), "ai_status": result.get("ai_status", {})})
             self.speaking_task = asyncio.create_task(self.speak(turn_id, reply, started))
 
     async def speak(self, turn_id: str, text: str, started: float) -> None:

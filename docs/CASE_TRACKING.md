@@ -22,7 +22,15 @@ filed_user_reported → filed_verified; plus needs_professional_review, closed, 
 ## Deadlines
 - Computed: limitation (s.69, two years from the date the problem arose) — always marked
   *estimate*, with basis and citation; becomes `missed` if passed.
-- User-reported: hearings (from updates), responses, custom reminders.
+- Computed: admissibility target (s.36(2), second proviso: admissibility "shall ordinarily be decided
+  within twenty-one days" of filing), created when the citizen reports the submission date; marked
+  *estimate* and described as the Commission's target, not a guaranteed date. Withheld if s.36 is
+  not in the knowledge base.
+- User-reported: hearings (from updates), responses, custom reminders, and the reply deadline the
+  citizen set in their own legal notice (`legal_notice`), labelled "not a period fixed by law"; the
+  Act prescribes no legal-notice period, so none is computed.
+- Calendar: `GET /cases/{id}/deadlines.ics` (RFC 5545 all-day events with the basis in the
+  description and a reminder alarm) and a Google Calendar link per deadline.
 - Reminders: daily job creates de-duplicated notifications in the 60-day window (at the configured
   lead time, 7 days and 1 day before) and emails them when SMTP is configured.
 

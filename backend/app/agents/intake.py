@@ -257,6 +257,10 @@ def extract_offline(
 # ---- LLM path -------------------------------------------------------------------------------
 
 
+# Names go into legal documents exactly as written, so the extracted value must appear in the message.
+VERBATIM_SLOTS = frozenset({"complainant_name", "seller_name"})
+
+
 class LLMFact(BaseModel):
     slot: SlotKey
     value: str = Field(description="Normalised value. Dates as YYYY-MM-DD, money as digits only.")
@@ -325,6 +329,9 @@ async def extract_with_llm(
         if f.slot not in SLOT_BY_KEY:
             continue
         excerpt_ok = " ".join(f.excerpt.lower().split()) in norm_msg if f.excerpt else False
+        if f.slot in VERBATIM_SLOTS and " ".join(f.value.lower().split()) not in norm_msg:
+            # A name the user did not literally write (e.g. a transliteration) needs their confirmation.
+            excerpt_ok = False
         provenance = FactProvenance.AI_INFERENCE if (f.is_inference or not excerpt_ok) else FactProvenance.USER_STATED
         if f.slot == asked_slot and parsed.answered_asked_slot and excerpt_ok and not f.is_inference:
             provenance = FactProvenance.USER_STATED

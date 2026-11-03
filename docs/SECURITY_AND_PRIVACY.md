@@ -59,7 +59,7 @@ unless marked otherwise.
 | Store transcripts | Messages stored as placeholders; facts still saved as the case record |
 | Store documents | Uploads refused |
 | Keep voice recordings | Audio transcribed and discarded; turning it off deletes stored recordings |
-| External AI processing | Claude is never called for that user; rule-based agents only |
+| External AI processing | No LLM (Groq/Claude) is called for that user, neither for conversation nor for reading their uploads; rule-based agents and pattern extraction only |
 Speech via Sarvam is used only if the user selects it in Settings.
 
 ## Retention & deletion

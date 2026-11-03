@@ -15,6 +15,7 @@
 |---|---|---|
 | Guided filing | Implemented and tested | Step list (open portal, sign in yourself, start complaint, copy data sheet, upload approved PDFs, pay fee yourself, submit yourself, record reference) + data sheet of confirmed facts + checklist state |
 | Browser assist (Playwright) | Implemented, disabled by default, not exercised against the live portal | Opens a visible browser at the portal, detects login/OTP/CAPTCHA and hands control to the user; label-matching fill planner for approved values only; never clicks submit/pay/sign |
+| Local co-pilot bundle (`integrations/ejagriti_copilot.py`) | Implemented and tested offline; not run against the live portal | `GET /filing/{id}/copilot-bundle` (needs `SUBMIT_FILING` + `SHARE_EXTERNAL` over the current approved versions) returns a ZIP: approved PDFs, `case_packet.json` (only user-provided/confirmed values, SHA-256 of each PDF) and a Playwright script the citizen runs on their own computer. It waits for the citizen to log in (OTP/CAPTCHA), fills only fields whose label clearly matches, attaches PDFs where an upload label names the document, prints `HITL_AWAITING_CITIZEN_OTP_AND_SUBMIT` and stops. It never clicks; the citizen reviews and submits. Case data stays in the JSON, never in the script. |
 | API submission | Not implemented — blocked by absence of an authorised API | — |
 
 ## Approval gates

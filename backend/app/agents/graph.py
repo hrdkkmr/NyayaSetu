@@ -37,7 +37,7 @@ from app.agents import planning as planning_agent
 from app.agents import research as research_agent
 from app.agents import responder
 from app.agents.extract import URGENT_SAFETY
-from app.agents.llm import LLMProvider, get_llm
+from app.agents.llm import LLMProvider, get_llm, track_llm_calls
 from app.agents.state import CaseState, durable, new_state
 from app.core.errors import ConflictError
 from app.domains.consumer.slots import SLOT_BY_KEY, SLOTS
@@ -57,6 +57,27 @@ def _ctx(config: RunnableConfig) -> tuple[AsyncSession, LLMProvider, WorkflowIns
     return c["db"], c["llm"], c["workflow"], c["case"]
 
 
+# Plain-language stage for each recorded agent, shown in the agent trace.
+STAGES: dict[str, str] = {
+    "safety": "safety_guard",
+    "intake": "intake_and_extract",
+    "classification": "classify_dispute",
+    "referral": "referral",
+    "intake_question": "gap_analysis_router",
+    "legal_research": "neuro_symbolic_research",
+    "workflow_planning": "planning",
+    "document_generation": "document_drafter_and_critic",
+    "filing": "filing_readiness",
+    "case_tracking": "case_tracking",
+}
+
+
+def _trace(config: RunnableConfig, entry: dict[str, Any]) -> None:
+    trace = config["configurable"].get("trace")
+    if trace is not None:
+        trace.append({"stage": STAGES.get(entry["agent"], entry["agent"]), **entry})
+
+
 def recorded(agent: str) -> Callable[[Callable[..., Awaitable[dict[str, Any]]]], Callable[..., Awaitable[dict[str, Any]]]]:
     """Record each node run in agent_executions, retry once, and degrade gracefully."""
 
@@ -69,21 +90,29 @@ def recorded(agent: str) -> Callable[[Callable[..., Awaitable[dict[str, Any]]]],
                 try:
                     async with db.begin_nested():
                         update_ = await fn(state, config)
-                    db.add(AgentExecution(
+                    execution = AgentExecution(
                         workflow_id=workflow.id, case_id=case.id, agent=agent, status="succeeded",
                         provider=update_.pop("_provider", "rules"), model=update_.pop("_model", None),
                         attempt=attempt, latency_ms=int((time.perf_counter() - started) * 1000),
                         summary=update_.pop("_summary", {}),
-                    ))
+                    )
+                    db.add(execution)
+                    _trace(config, {"agent": agent, "status": "succeeded", "provider": execution.provider,
+                                    "model": execution.model, "attempt": attempt,
+                                    "latency_ms": execution.latency_ms, "summary": execution.summary})
                     return update_
                 except Exception as exc:  # noqa: BLE001 - recorded and surfaced below
                     last_error = exc
                     logger.exception("Agent %s failed (attempt %s)", agent, attempt)
+                    latency = int((time.perf_counter() - started) * 1000)
                     db.add(AgentExecution(
                         workflow_id=workflow.id, case_id=case.id, agent=agent, status="failed", provider="n/a",
-                        attempt=attempt, latency_ms=int((time.perf_counter() - started) * 1000),
+                        attempt=attempt, latency_ms=latency,
                         error=f"{type(exc).__name__}: {str(exc)[:500]}",
                     ))
+                    _trace(config, {"agent": agent, "status": "failed", "provider": "n/a", "model": None,
+                                    "attempt": attempt, "latency_ms": latency,
+                                    "summary": {"error": type(exc).__name__}})
             lang = responder.L(state.get("language", "en"))
             message = ("माफ़ कीजिए, इस कदम में तकनीकी दिक्कत आई। आपकी जानकारी सुरक्षित है — कृपया थोड़ी देर बाद फिर कोशिश करें।"
                        if lang == "hi" else
@@ -496,6 +525,25 @@ class RunResult:
     language: str = "en"
     events: list[dict[str, Any]] = field(default_factory=list)
     errors: list[dict[str, Any]] = field(default_factory=list)
+    trace: list[dict[str, Any]] = field(default_factory=list)
+    ai_status: dict[str, Any] = field(default_factory=dict)
+
+
+def ai_status(allowed: bool, configured: bool, calls: list[dict[str, Any]]) -> dict[str, Any]:
+    """What produced this turn: the AI model, a backup model, or the deterministic rules."""
+    if not configured:
+        return {"mode": "rules", "reason": "not_configured"}
+    if not allowed:
+        return {"mode": "rules", "reason": "no_consent"}
+    failed = [c for c in calls if not c["ok"]]
+    succeeded = [c for c in calls if c["ok"]]
+    if failed and not succeeded:
+        return {"mode": "rules_fallback", "reason": failed[-1]["error"]}
+    if any(c["backup"] for c in succeeded):
+        return {"mode": "ai_backup", "model": next(c["model"] for c in succeeded if c["backup"])}
+    if failed:  # some calls fell back to rules, others used AI
+        return {"mode": "ai_partial", "reason": failed[-1]["error"]}
+    return {"mode": "ai", "model": succeeded[0]["model"] if succeeded else None}
 
 
 async def get_or_create_workflow(db: AsyncSession, case: Case) -> WorkflowInstance:
@@ -532,9 +580,12 @@ async def run_case_workflow(
     state["events"] = []
     state["errors"] = []
 
-    config: RunnableConfig = {"configurable": {"db": db, "llm": llm, "workflow": workflow, "case": case}}
+    trace: list[dict[str, Any]] = []
+    config: RunnableConfig = {"configurable": {"db": db, "llm": llm, "workflow": workflow, "case": case,
+                                               "trace": trace}}
     workflow.status = WorkflowStatus.RUNNING
-    final: CaseState = await get_graph().ainvoke(state, config=config)
+    with track_llm_calls() as llm_calls:
+        final: CaseState = await get_graph().ainvoke(state, config=config)
 
     phase = final.get("phase", "intake")
     workflow.state = durable(final)
@@ -559,7 +610,8 @@ async def run_case_workflow(
     return RunResult(
         reply=final.get("reply"), cards=final.get("reply_cards", []), phase=phase,
         asked_slot=final.get("asked_slot"), language=final.get("language", "en"),
-        events=final.get("events", []), errors=final.get("errors", []),
+        events=final.get("events", []), errors=final.get("errors", []), trace=trace,
+        ai_status=ai_status(bool(prefs and prefs.consent_external_ai), llm.available, llm_calls),
     )
 
 

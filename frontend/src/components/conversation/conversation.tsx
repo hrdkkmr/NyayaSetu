@@ -5,13 +5,14 @@ import { Bot, Keyboard, Mic, Send, User } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { AgentTelemetry, AiStatusBadge } from "@/components/conversation/agent-telemetry";
 import { MessageCards } from "@/components/conversation/cards";
 import { VoicePanel } from "@/components/conversation/voice-panel";
 import { Button } from "@/components/ui/button";
 import { Alert, Textarea } from "@/components/ui/primitives";
 import { api, ApiError } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import type { Card, ChatMessage, Lang, TurnResult } from "@/lib/types";
+import type { AiStatus, Card, ChatMessage, Lang, TraceEntry, TurnResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -34,6 +35,8 @@ export function Conversation({ caseId, initialMode = "text", initialTurn = null 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [lastTrace, setLastTrace] = useState<TraceEntry[]>(initialTurn?.trace ?? []);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(initialTurn?.ai_status ?? null);
   const voiceSender = useRef<((text: string) => void) | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -55,7 +58,13 @@ export function Conversation({ caseId, initialMode = "text", initialTurn = null 
 
   const refreshCase = useCallback(() => {
     void qc.invalidateQueries({ queryKey: ["case", caseId] });
+    void qc.invalidateQueries({ queryKey: ["agent-trace", caseId] });
   }, [qc, caseId]);
+
+  const recordTelemetry = useCallback((trace?: TraceEntry[], status?: AiStatus) => {
+    if (trace) setLastTrace(trace);
+    if (status) setAiStatus(status);
+  }, []);
 
   const sendText = async (text: string) => {
     const value = text.trim();
@@ -70,6 +79,7 @@ export function Conversation({ caseId, initialMode = "text", initialTurn = null 
     try {
       const turn = await api<TurnResult>(`/cases/${caseId}/messages`, { method: "POST", body: { text: value, language: lang } });
       setMessages((m) => [...m.slice(0, -1), { ...turn.user_message }, turn.assistant_message]);
+      recordTelemetry(turn.trace, turn.ai_status);
       refreshCase();
     } catch (e) {
       setMessages((m) => m.slice(0, -1));
@@ -81,10 +91,12 @@ export function Conversation({ caseId, initialMode = "text", initialTurn = null 
   };
 
   const onUserVoice = useCallback((text: string) => setMessages((m) => [...m, localMessage("user", text)]), []);
-  const onAssistantVoice = useCallback((text: string, cards: Card[], _phase: string, language: Lang) => {
+  const onAssistantVoice = useCallback((text: string, cards: Card[], _phase: string, language: Lang,
+                                         meta?: { trace?: TraceEntry[]; ai_status?: AiStatus }) => {
     setMessages((m) => [...m, localMessage("assistant", text, { cards, language })]);
+    recordTelemetry(meta?.trace, meta?.ai_status);
     refreshCase();
-  }, [refreshCase]);
+  }, [refreshCase, recordTelemetry]);
   const registerSender = useCallback((send: ((text: string) => void) | null) => {
     voiceSender.current = send;
   }, []);
@@ -102,7 +114,10 @@ export function Conversation({ caseId, initialMode = "text", initialTurn = null 
             <Keyboard aria-hidden /> {t("chat.switchToText")}
           </Button>
         </div>
-        <span className="text-xs text-muted">{t("chat.aiLabel")}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <AiStatusBadge status={aiStatus} />
+          <span className="text-xs text-muted">{t("chat.aiLabel")}</span>
+        </div>
       </div>
 
       {data?.store_transcript === false && <Alert tone="info">{t("chat.notStored")}</Alert>}
@@ -135,6 +150,8 @@ export function Conversation({ caseId, initialMode = "text", initialTurn = null 
         {sending && <p className="text-sm italic text-muted">{t("chat.thinking")}</p>}
         <div ref={endRef} />
       </div>
+
+      <AgentTelemetry caseId={caseId} lastTrace={lastTrace} />
 
       <form
         onSubmit={(e) => {

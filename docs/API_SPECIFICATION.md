@@ -40,13 +40,15 @@ high_contrast, reduce_motion, voice_provider, speech_rate, autoplay_voice, conse
 | GET | `/cases/{id}` | detail: facts, parties, timeline, missing info, analysis, workflow steps, deadlines, counts |
 | PATCH | `/cases/{id}` | rename |
 | POST | `/cases/{id}/archive?archived=bool` | |
-| GET/POST | `/cases/{id}/messages` | POST `{text, modality, language?}` → `TurnResult` (user + assistant message, cards, phase, asked_slot) |
+| GET/POST | `/cases/{id}/messages` | POST `{text, modality, language?}` → `TurnResult` (user + assistant message, cards, phase, asked_slot, `trace` [stage, agent, status, provider, model, latency_ms, summary], `ai_status` {mode: ai / ai_backup / ai_partial / rules_fallback / rules, model?, reason?}) |
+| GET | `/cases/{id}/agent-trace?limit=` | recent agent runs (error type only) + `provenance`: each rule outcome's provision with an excerpt read from the knowledge base at request time |
 | POST | `/cases/{id}/facts` | `{key, value}` user-confirmed edit |
 | POST | `/cases/{id}/facts/{fid}/confirm` · `/reject` | |
 | POST | `/cases/{id}/analysis/refresh` | re-run research + planning |
 | GET | `/cases/{id}/research` | citations with document metadata, rule outcomes, limitations |
 | POST | `/cases/{id}/workflow/steps/{key}?status=done|pending` | user-owned steps only |
-| GET/POST | `/cases/{id}/deadlines` · PATCH `/deadlines/{did}` | |
+| GET/POST | `/cases/{id}/deadlines` · PATCH `/deadlines/{did}` | kinds `hearing`, `response`, `user`, `legal_notice` (user-set, not statutory); computed `limitation`, `admissibility`; each has `google_calendar_url` |
+| GET | `/cases/{id}/deadlines.ics` | open deadlines as `text/calendar` |
 | GET/POST | `/cases/{id}/updates` | user-reported updates (hearing adds a deadline) |
 | GET | `/cases/{id}/activity` · `/approvals` | |
 
@@ -60,7 +62,7 @@ high_contrast, reduce_motion, voice_provider, speech_rate, autoplay_voice, conse
 | GET | `/cases/{id}/uploads[/{uid}]` | detail includes extraction fields + text preview |
 | GET | `/cases/{id}/uploads/{uid}/file` | decrypted download (audited) |
 | DELETE | `/cases/{id}/uploads/{uid}` | |
-| POST | `/cases/{id}/uploads/{uid}/accept-fields` | `{fields:[amount_paid|purchase_date|seller_name]}` → document facts |
+| POST | `/cases/{id}/uploads/{uid}/accept-fields` | `{fields:[amount_paid|purchase_date|seller_name|product]}` → document facts |
 | GET/POST | `/cases/{id}/evidence` · PATCH/DELETE `/evidence/{eid}` | auto labels `Annexure A-n` |
 
 ## Drafts, approvals, filing
@@ -77,6 +79,7 @@ high_contrast, reduce_motion, voice_provider, speech_rate, autoplay_voice, conse
 | POST | `/cases/{id}/filing/start` | `{mode: guided|browser_assist}` |
 | POST | `/cases/{id}/filing/{fid}/checklist` | `{key, done}` |
 | POST | `/cases/{id}/filing/{fid}/browser-assist` | local deployments only |
+| GET | `/cases/{id}/filing/{fid}/copilot-bundle` | ZIP (approved PDFs + `case_packet.json` + local co-pilot script); 428 without `SUBMIT_FILING` and `SHARE_EXTERNAL` |
 | POST | `/cases/{id}/filing/{fid}/acknowledgement` | `{acknowledgement_number, submitted_on, document_id?}` → `submitted_user_reported` |
 
 ## Legal, notifications, voice

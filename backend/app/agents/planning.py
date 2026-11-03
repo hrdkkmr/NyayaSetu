@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domains.consumer import rules
 from app.models import Deadline, WorkflowStep
 from app.models.enums import DeadlineKind, DeadlineStatus, StepStatus
 
@@ -164,3 +165,31 @@ async def sync_limitation_deadline(db: AsyncSession, case_id: uuid.UUID, outcome
     existing.reminder_days_before = 30
     if value["status"] == "expired":
         existing.status = DeadlineStatus.MISSED
+
+
+async def sync_admissibility_deadline(db: AsyncSession, case_id: uuid.UUID, filed_on: date) -> Deadline | None:
+    """Statutory target for the admissibility decision, counted from the user-reported filing date.
+
+    Withheld (and any earlier one removed) when section 36 is not in the knowledge base."""
+    outcome = await rules.ground(db, rules.admissibility_target(filed_on))
+    existing = await db.scalar(
+        select(Deadline).where(Deadline.case_id == case_id, Deadline.kind == DeadlineKind.ADMISSIBILITY,
+                               Deadline.source == "computed")
+    )
+    if not outcome.grounded:
+        if existing is not None:
+            await db.delete(existing)
+        return None
+    basis = outcome.basis[0]
+    if existing is None:
+        existing = Deadline(case_id=case_id, kind=DeadlineKind.ADMISSIBILITY, source="computed",
+                            title="Commission's target to decide admissibility")
+        db.add(existing)
+    existing.due_date = date.fromisoformat(outcome.value["target_date"])
+    existing.is_estimate = True
+    existing.basis = (f"{basis.section_ref}(2) of {basis.document_title or 'the Consumer Protection Act, 2019'}: "
+                      "admissibility is ordinarily decided within 21 days of filing. A target for the Commission, "
+                      "counted from the submission date you reported.")
+    existing.citation_chunk_id = uuid.UUID(basis.chunk_id) if basis.chunk_id else None
+    existing.reminder_days_before = 0
+    return existing

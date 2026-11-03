@@ -29,7 +29,9 @@ from app.services.storage import get_storage, load_decrypted, store_encrypted
 router = APIRouter(tags=["documents"])
 
 # Extracted field → case fact key. Other fields are informational only.
-FIELD_TO_FACT = {"amount_paid": "amount_paid", "purchase_date": "purchase_date", "seller_name": "seller_name"}
+# Extracted field → case fact it can become once the user accepts it.
+FIELD_TO_FACT = {"amount_paid": "amount_paid", "purchase_date": "purchase_date", "seller_name": "seller_name",
+                 "product": "product_or_service"}
 
 
 class AcceptFields(BaseModel):

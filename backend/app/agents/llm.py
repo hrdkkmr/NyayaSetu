@@ -19,7 +19,9 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Generic, Protocol, TypeVar
 
@@ -37,6 +39,32 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 class LLMUnavailableError(RuntimeError):
     """No LLM is configured, or the provider failed after retries."""
+
+    def __init__(self, message: str, *, retryable: bool = True) -> None:
+        super().__init__(message)
+        # False when another model on the same account cannot help (e.g. rejected credentials).
+        self.retryable = retryable
+
+
+# Per-request log of LLM calls, so a workflow run can report honestly whether AI, a backup
+# model or the rule path produced its answer. Context variables are safe across concurrent requests.
+_call_log: ContextVar[list[dict[str, Any]] | None] = ContextVar("llm_call_log", default=None)
+
+
+@contextmanager
+def track_llm_calls() -> Iterator[list[dict[str, Any]]]:
+    log: list[dict[str, Any]] = []
+    token = _call_log.set(log)
+    try:
+        yield log
+    finally:
+        _call_log.reset(token)
+
+
+def log_llm_call(model: str | None, ok: bool, *, backup: bool = False, error: str | None = None) -> None:
+    log = _call_log.get()
+    if log is not None:
+        log.append({"model": model, "ok": ok, "backup": backup, "error": error})
 
 
 class LLMRefusalError(RuntimeError):
@@ -129,6 +157,22 @@ class AnthropicProvider:
         schema: type[T],
         max_tokens: int = 4096,
     ) -> LLMResult[T]:
+        try:
+            result = await self._structured(system=system, messages=messages, schema=schema, max_tokens=max_tokens)
+        except LLMUnavailableError as exc:
+            log_llm_call(self.model, False, error=str(exc))
+            raise
+        log_llm_call(self.model, True)
+        return result
+
+    async def _structured(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        schema: type[T],
+        max_tokens: int = 4096,
+    ) -> LLMResult[T]:
         anthropic = self._anthropic
         started = time.perf_counter()
         try:
@@ -146,7 +190,7 @@ class AnthropicProvider:
                 # The account may not have the fallback beta; retry once without it.
                 logger.warning("Fallback beta rejected; retrying without server-side fallbacks")
                 self._fallbacks = False
-                return await self.structured(
+                return await self._structured(
                     system=system, messages=messages, schema=schema, max_tokens=max_tokens
                 )
             raise LLMUnavailableError(f"LLM request rejected: {exc.message}") from exc
@@ -214,8 +258,11 @@ class OpenAICompatibleProvider:
         model: str,
         timeout: float = 90.0,
         transport: httpx.AsyncBaseTransport | None = None,
+        fallback_model: str | None = None,
     ) -> None:
         self.model: str | None = model
+        # Tried once when the primary model is rate-limited, down or returns unusable output.
+        self.fallback_model = fallback_model if fallback_model and fallback_model != model else None
         self._url = f"{base.rstrip('/')}/chat/completions"
         self._headers = {"Authorization": f"Bearer {api_key}"}
         self._timeout = timeout
@@ -233,16 +280,17 @@ class OpenAICompatibleProvider:
     @staticmethod
     def _raise_for_status(resp: httpx.Response) -> None:
         if resp.status_code in (401, 403):
-            raise LLMUnavailableError("LLM credentials were rejected")
+            raise LLMUnavailableError("LLM credentials were rejected", retryable=False)
         if resp.status_code == 429:
             raise LLMUnavailableError("LLM rate limit reached")
         if resp.status_code >= 400:
             raise LLMUnavailableError(f"LLM service error ({resp.status_code})")
 
     def _body(
-        self, system: str, messages: list[dict[str, Any]], max_tokens: int, schema: type[BaseModel] | None
+        self, system: str, messages: list[dict[str, Any]], max_tokens: int, schema: type[BaseModel] | None,
+        model: str | None = None,
     ) -> dict[str, Any]:
-        body: dict[str, Any] = {"model": self.model, "max_tokens": max_tokens}
+        body: dict[str, Any] = {"model": model or self.model, "max_tokens": max_tokens}
         if schema is not None:
             schema_json = schema.model_json_schema()
             if self._json_mode_only:
@@ -263,16 +311,37 @@ class OpenAICompatibleProvider:
         schema: type[T],
         max_tokens: int = 4096,
     ) -> LLMResult[T]:
+        try:
+            result = await self._structured_once(self.model, system, messages, schema, max_tokens)
+        except LLMUnavailableError as exc:
+            log_llm_call(self.model, False, error=str(exc))
+            if not (exc.retryable and self.fallback_model):
+                raise
+            logger.warning("Primary LLM failed (%s); trying backup model", exc)
+            try:
+                result = await self._structured_once(self.fallback_model, system, messages, schema, max_tokens)
+            except LLMUnavailableError as backup_exc:
+                log_llm_call(self.fallback_model, False, backup=True, error=str(backup_exc))
+                raise
+            log_llm_call(self.fallback_model, True, backup=True)
+            result.meta["backup_model"] = True
+            return result
+        log_llm_call(self.model, True)
+        return result
+
+    async def _structured_once(
+        self, model: str | None, system: str, messages: list[dict[str, Any]], schema: type[T], max_tokens: int,
+    ) -> LLMResult[T]:
         started = time.perf_counter()
         try:
             async with self._client() as client:
-                resp = await client.post(self._url, json=self._body(system, messages, max_tokens, schema))
+                resp = await client.post(self._url, json=self._body(system, messages, max_tokens, schema, model))
         except httpx.HTTPError as exc:
             raise LLMUnavailableError("Could not reach the LLM service") from exc
         if resp.status_code == 400 and not self._json_mode_only:
             logger.warning("JSON schema output rejected; retrying with JSON mode")
             self._json_mode_only = True
-            return await self.structured(system=system, messages=messages, schema=schema, max_tokens=max_tokens)
+            return await self._structured_once(model, system, messages, schema, max_tokens)
         self._raise_for_status(resp)
 
         try:
@@ -296,7 +365,7 @@ class OpenAICompatibleProvider:
         return LLMResult(
             value=parsed,
             provider=self.name,
-            model=data.get("model", self.model),
+            model=data.get("model", model),
             latency_ms=int((time.perf_counter() - started) * 1000),
             input_tokens=usage.get("prompt_tokens"),
             output_tokens=usage.get("completion_tokens"),
@@ -343,7 +412,8 @@ def _build_provider() -> LLMProvider:
     if settings.llm_provider == "openai_compatible":
         assert settings.llm_api_base and settings.llm_api_key and settings.llm_model
         return OpenAICompatibleProvider(  # type: ignore[return-value]
-            settings.llm_api_base, settings.llm_api_key, settings.llm_model, settings.llm_timeout_seconds
+            settings.llm_api_base, settings.llm_api_key, settings.llm_model, settings.llm_timeout_seconds,
+            fallback_model=settings.llm_fallback_model,
         )
     return AnthropicProvider()  # type: ignore[return-value]
 

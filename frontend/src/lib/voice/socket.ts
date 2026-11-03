@@ -1,13 +1,14 @@
 /** Voice WebSocket client with ticket auth, keep-alive and automatic reconnection/resume. */
 
 import { api, wsBase } from "@/lib/api";
-import type { Lang } from "@/lib/types";
+import type { AiStatus, Lang, TraceEntry } from "@/lib/types";
 
 export type ServerEvent =
   | { type: "ready"; voice_session_id: string; resume_token: string; stt: string; tts: string; language: Lang; resumed: boolean }
   | { type: "state"; value: "listening" | "processing" | "speaking" }
   | { type: "transcript"; text: string; language?: Lang; final: boolean }
-  | { type: "assistant_text"; turn_id: string; text: string; cards: unknown[]; phase: string; language: Lang }
+  | { type: "assistant_text"; turn_id: string; text: string; cards: unknown[]; phase: string; language: Lang;
+      trace?: TraceEntry[]; ai_status?: AiStatus }
   | { type: "tts_sentence"; turn_id: string; index: number; text: string; language: Lang; last: boolean; audio_b64?: string; mime?: string }
   | { type: "turn_end"; turn_id: string }
   | { type: "speech_cancelled" }

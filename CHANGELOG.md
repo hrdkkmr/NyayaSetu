@@ -3,6 +3,19 @@
 ## Unreleased
 
 ### Added
+- Statutory deadline calculator additions: s.36(2) admissibility target on reported filing;
+  user-set legal-notice deadline (labelled non-statutory); `.ics` export and Google Calendar links.
+- Live agent telemetry: `trace` and `ai_status` in turn responses (text and voice), `GET
+  /cases/{id}/agent-trace` with provenance re-read from the knowledge base, and a collapsible drawer.
+- Backup LLM model (`LLM_FALLBACK_MODEL`) and an AI/rules status badge.
+- AI evidence extraction from uploads (brand, product, defect summary and more), quote-checked and
+  reviewed by the user before use.
+- e-Jagriti local co-pilot bundle (`GET /filing/{id}/copilot-bundle`).
+
+### Fixed
+- Transliterated names (e.g. "राहुल" read as "Rahil") were stored as user-stated; names must now
+  appear verbatim or are treated as inferences needing confirmation.
+- The AI consent text no longer names a specific vendor.
 - `LLM_PROVIDER=openai_compatible` (`LLM_API_BASE`, `LLM_API_KEY`, `LLM_MODEL`): agents can use any
   OpenAI-style Chat Completions API (xAI Grok, Groq) with the same consent gate and rule fallback.
 - Password reset by 6-digit email code (one page: request → enter code + new password), with a

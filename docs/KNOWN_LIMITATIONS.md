@@ -15,6 +15,13 @@
 - Without Claude, intake uses patterns: free-text answers are assigned to the question asked, and
   corrections inside long sentences may not be picked up (users can edit facts directly).
 - Only the consumer domain has a guided workflow; other domains are referred.
+- The e-Jagriti co-pilot matches form fields by visible label; the live form was not mapped, so it
+  may fill little and leave most fields (and every drop-down) to the citizen. It needs Python and
+  Playwright on the citizen's computer.
+- The admissibility date is the Commission's statutory target ("ordinarily"), not a hearing date.
+  No legal-notice period is computed because the Act prescribes none.
+- AI evidence extraction reads OCR/PDF text, not the image itself (no vision model is configured);
+  poor scans give poor fields.
 - Claude paths are tested only with a scripted provider (no API key available during development).
 - The OpenAI-compatible provider (Grok/Groq) is tested against a mocked HTTP API only. Models that
   support neither `json_schema` nor JSON mode cannot be used; their output fails validation and the

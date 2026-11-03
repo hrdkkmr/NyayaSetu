@@ -9,7 +9,7 @@ import { Alert, Badge } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
-import type { Card, Lang } from "@/lib/types";
+import type { AiStatus, Card, Lang, TraceEntry } from "@/lib/types";
 import { MicCapture } from "@/lib/voice/mic";
 import { VoiceSocket, type ServerEvent } from "@/lib/voice/socket";
 import { BrowserRecognizer, browserSttSupported, SpeechOutput } from "@/lib/voice/speech";
@@ -20,7 +20,8 @@ type Status = "off" | "connecting" | "listening" | "processing" | "speaking" | "
 interface Props {
   caseId: string;
   onUserText: (text: string) => void;
-  onAssistant: (text: string, cards: Card[], phase: string, language: Lang) => void;
+  onAssistant: (text: string, cards: Card[], phase: string, language: Lang,
+                meta?: { trace?: TraceEntry[]; ai_status?: AiStatus }) => void;
   registerSender: (send: ((text: string) => void) | null) => void;
 }
 
@@ -71,7 +72,7 @@ export function VoicePanel({ caseId, onUserText, onAssistant, registerSender }: 
         if (e.text) onUserText(e.text);
         break;
       case "assistant_text":
-        onAssistant(e.text, e.cards as Card[], e.phase, e.language);
+        onAssistant(e.text, e.cards as Card[], e.phase, e.language, { trace: e.trace, ai_status: e.ai_status });
         if (e.language && e.language !== langRef.current) setLang(e.language);
         break;
       case "tts_sentence":

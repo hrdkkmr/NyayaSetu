@@ -1,14 +1,14 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BadgeCheck, CircleUserRound, Cpu, History } from "lucide-react";
+import { BadgeCheck, CalendarPlus, CircleUserRound, Cpu, Download, History } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { DeadlineChip } from "@/components/case-bits";
 import { Button } from "@/components/ui/button";
 import { Alert, Badge, Card, CardBody, CardHeader, CardTitle, Field, Input, Select } from "@/components/ui/primitives";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, download } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { CaseDetail, CaseUpdate } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
@@ -33,6 +33,24 @@ export function TrackingTab({ detail }: { detail: CaseDetail }) {
     },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : t("common.errorGeneric")),
   });
+  const [noticeDate, setNoticeDate] = useState("");
+  const addNotice = useMutation({
+    mutationFn: () => api(`/cases/${caseId}/deadlines`, {
+      method: "POST", body: { title: t("tracking.noticeDefaultTitle"), due_date: noticeDate, kind: "legal_notice" },
+    }),
+    onSuccess: () => {
+      setNoticeDate("");
+      void qc.invalidateQueries({ queryKey: ["case", caseId] });
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : t("common.errorGeneric")),
+  });
+  const exportCalendar = async () => {
+    try {
+      await download(`/cases/${caseId}/deadlines.ics`, `nyayasetu-${detail.case.reference}.ics`);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : t("common.errorGeneric"));
+    }
+  };
   const done = useMutation({
     mutationFn: (id: string) => api(`/cases/${caseId}/deadlines/${id}`, { method: "PATCH", body: { status: "done" } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["case", caseId] }),
@@ -96,12 +114,36 @@ export function TrackingTab({ detail }: { detail: CaseDetail }) {
                 {detail.deadlines.map((d) => (
                   <li key={d.id}>
                     <DeadlineChip deadline={d} />
+                    {d.basis && <p className="ml-8 text-xs text-muted">{d.basis}</p>}
+                    {d.status === "open" && d.google_calendar_url && (
+                      <a href={d.google_calendar_url} target="_blank" rel="noopener noreferrer"
+                         className="ml-8 inline-flex min-h-11 items-center gap-1 text-sm text-navy-700 underline">
+                        <CalendarPlus className="size-4" aria-hidden />{t("tracking.googleCalendar")}
+                      </a>
+                    )}
                     {d.status === "open" && <Button size="sm" variant="link" className="ml-8" onClick={() => done.mutate(d.id)}>{t("tracking.markDone")}</Button>}
                     {d.status !== "open" && <p className="ml-8 text-xs text-muted">{d.status}</p>}
                   </li>
                 ))}
               </ul>
             )}
+            {detail.deadlines.some((d) => d.status === "open") && (
+              <Button size="sm" variant="secondary" className="mt-3 w-full" onClick={() => void exportCalendar()}>
+                <Download aria-hidden />{t("tracking.calendarDownload")}
+              </Button>
+            )}
+          </CardBody>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>{t("tracking.noticeTitle")}</CardTitle></CardHeader>
+          <CardBody>
+            <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); addNotice.mutate(); }}>
+              <p className="text-sm text-muted">{t("tracking.noticeHint")}</p>
+              <Field id="notice-date" label={t("tracking.noticeDate")}>
+                <Input id="notice-date" type="date" required value={noticeDate} onChange={(e) => setNoticeDate(e.target.value)} />
+              </Field>
+              <Button type="submit" className="w-full" loading={addNotice.isPending} disabled={!noticeDate}>{t("common.save")}</Button>
+            </form>
           </CardBody>
         </Card>
       </div>

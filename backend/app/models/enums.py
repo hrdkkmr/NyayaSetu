@@ -148,6 +148,8 @@ class DeadlineKind(StrEnum):
     HEARING = "hearing"
     RESPONSE = "response"
     USER = "user"
+    ADMISSIBILITY = "admissibility"  # statutory target, CPA 2019 s. 36(2)
+    LEGAL_NOTICE = "legal_notice"    # the reply deadline the user set in their own notice (not statutory)
 
 
 class DeadlineStatus(StrEnum):

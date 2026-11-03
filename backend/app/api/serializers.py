@@ -19,6 +19,7 @@ from app.models import (
     UploadedDocument,
     WorkflowStep,
 )
+from app.services.calendar import google_calendar_url
 
 
 def iso(value: Any) -> str | None:
@@ -59,12 +60,15 @@ def step(s: WorkflowStep) -> dict[str, Any]:
     }
 
 
-def deadline(d: Deadline) -> dict[str, Any]:
-    return {
+def deadline(d: Deadline, case_reference: str | None = None) -> dict[str, Any]:
+    out = {
         "id": str(d.id), "title": d.title, "due_date": iso(d.due_date), "kind": d.kind, "status": d.status,
         "source": d.source, "basis": d.basis, "is_estimate": d.is_estimate,
         "citation_chunk_id": str(d.citation_chunk_id) if d.citation_chunk_id else None,
     }
+    if case_reference:
+        out["google_calendar_url"] = google_calendar_url(d, case_reference)
+    return out
 
 
 def case_update(u: CaseUpdate) -> dict[str, Any]:
